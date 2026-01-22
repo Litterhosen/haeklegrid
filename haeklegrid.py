@@ -27,8 +27,20 @@ html_code = """
     .btn-blue { background: #3498db; color: white; border: none; }
     .btn-green { background: #27ae60; color: white; border: none; }
     .active-tool { background: #f1c40f !important; color: black !important; }
+    
     .viewport { flex: 1; overflow: auto; background: #34495e; display: block; touch-action: none; }
-    canvas { background: white; transform-origin: 0 0; display: block; }
+    
+    /* BEVAR PIXEL KVALITET VED ZOOM */
+    canvas { 
+        background: white; 
+        transform-origin: 0 0; 
+        display: block; 
+        image-rendering: optimizeSpeed;             /* Eldre browsers */
+        image-rendering: -moz-crisp-edges;          /* Firefox */
+        image-rendering: -webkit-optimize-contrast; /* Safari */
+        image-rendering: pixelated;                 /* Moderne browsers */
+        image-rendering: optimize-contrast;         /* CSS spec */
+    }
 </style>
 </head>
 <body>
@@ -84,12 +96,20 @@ html_code = """
         canvas.width = (COLS * SIZE) + OFFSET;
         canvas.height = (ROWS * SIZE) + OFFSET;
         gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
+        
+        // Sikr pixel-skarphed på canvas context
+        ctx.imageSmoothingEnabled = false;
         draw();
     }
 
     function drawOnContext(targetCtx, s, off, isExport = false) {
-        const w = (COLS * s) + off;
-        const h = (ROWS * s) + off;
+        const w = targetCtx.canvas.width;
+        const h = targetCtx.canvas.height;
+        
+        // Hvis eksport, tilføj 40px ekstra hvid margen (Safe Zone)
+        const margin = isExport ? 40 : 0;
+        
+        targetCtx.imageSmoothingEnabled = false;
         targetCtx.fillStyle = "white";
         targetCtx.fillRect(0, 0, w, h);
         
@@ -98,16 +118,16 @@ html_code = """
 
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
-                const x = c * s + off;
-                const y = r * s + off;
+                const x = c * s + off + margin;
+                const y = r * s + off + margin;
                 
-                // Tal i margenen - nu præcis justeret
+                // Tal i margenen
                 if (r === 0) {
                     const colNum = c + 1;
                     if (colNum === 1 || colNum % 5 === 0) {
                         targetCtx.font = (colNum % 10 === 0) ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
                         targetCtx.fillStyle = (colNum % 10 === 0) ? "#000" : "#777";
-                        targetCtx.fillText(colNum, x + s/2, off/2);
+                        targetCtx.fillText(colNum, x + s/2, (off/2) + margin);
                     }
                 }
                 if (c === 0) {
@@ -115,20 +135,20 @@ html_code = """
                     if (rowNum === 1 || rowNum % 5 === 0) {
                         targetCtx.font = (rowNum % 10 === 0) ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
                         targetCtx.fillStyle = (rowNum % 10 === 0) ? "#000" : "#777";
-                        targetCtx.fillText(rowNum, off/2, y + s/2);
+                        targetCtx.fillText(rowNum, (off/2) + margin, y + s/2);
                     }
                 }
 
                 // Gitterlinjer
                 targetCtx.beginPath();
                 if ((r + 1) % 10 === 0 || (c + 1) % 10 === 0) {
-                    targetCtx.strokeStyle = "#444"; // Hver 10. (Meget tydelig)
+                    targetCtx.strokeStyle = "#444"; 
                     targetCtx.lineWidth = isExport ? 2 : 1.5;
                 } else if ((r + 1) % 5 === 0 || (c + 1) % 5 === 0) {
-                    targetCtx.strokeStyle = "#888"; // Hver 5.
+                    targetCtx.strokeStyle = "#888";
                     targetCtx.lineWidth = 1;
                 } else {
-                    targetCtx.strokeStyle = "#ddd"; // Standard
+                    targetCtx.strokeStyle = "#ddd";
                     targetCtx.lineWidth = 0.5;
                 }
                 targetCtx.strokeRect(x, y, s, s);
@@ -148,44 +168,29 @@ html_code = """
 
     function draw() { drawOnContext(ctx, SIZE, OFFSET, false); }
 
-    function handleAction(e) {
-        if (evCache.length >= 2) return;
-        const rect = canvas.getBoundingClientRect();
-        // Korrekt beregning af koordinater relativt til zoom og offset
-        const x = (e.clientX - rect.left) / scale;
-        const y = (e.clientY - rect.top) / scale;
-        
-        const gridC = Math.floor((x - OFFSET) / SIZE);
-        const gridR = Math.floor((y - OFFSET) / SIZE);
-
-        if (gridR >= 0 && gridR < ROWS && gridC >= 0 && gridC < COLS) {
-            saveHistory();
-            const mode = document.getElementById('mode').value;
-            if (mode === 'erase') gridData[gridR][gridC] = null;
-            else if (mode === 'fill') gridData[gridR][gridC] = (gridData[gridR][gridC] === 'fill' ? null : 'fill');
-            else gridData[gridR][gridC] = (gridData[gridR][gridC] === mode ? null : mode);
-            draw();
-        }
-    }
-
-    // Export og Zoom logik herunder (uændret men stabil)
     function exportSmart(type) {
         const exportScale = 2;
         const s = SIZE * exportScale;
         const off = OFFSET * exportScale;
+        const margin = 40 * exportScale; // Ekstra stor sikkerhedsmargen til mobiler
+        
         const out = document.createElement('canvas');
-        out.width = (COLS * s) + off;
-        out.height = (ROWS * s) + off;
-        drawOnContext(out.getContext('2d'), s, off, true);
+        out.width = (COLS * s) + off + (margin * 2);
+        out.height = (ROWS * s) + off + (margin * 2);
+        const oCtx = out.getContext('2d');
+        
+        drawOnContext(oCtx, s, off, true);
+        
         const url = out.toDataURL("image/png", 1.0);
         if(type === 'png') {
-            const a = document.createElement('a'); a.download = "mønster.png"; a.href = url; a.click();
+            const a = document.createElement('a'); a.download = "moenster-pixel-perfect.png"; a.href = url; a.click();
         } else {
             const w = window.open();
-            w.document.write(`<html><body style="margin:0;padding:20px;display:flex;justify-content:center;background:#fff;"><img src="${url}" style="max-width:100%;height:auto;object-fit:contain;"><script>setTimeout(()=>window.print(),500);<\\/script></body></html>`);
+            w.document.write(`<html><body style="margin:0;padding:20px;display:flex;justify-content:center;background:#fff;"><img src="${url}" style="max-width:98%;height:auto;object-fit:contain;"><script>setTimeout(()=>window.print(),500);<\\/script></body></html>`);
         }
     }
 
+    // Zoom og Input håndtering
     let isDown = false, evCache = [], prevDiff = -1;
     canvas.addEventListener('pointerdown', e => {
         if (isPan) { isDown = true; return; }
@@ -204,12 +209,29 @@ html_code = """
             if (index > -1) evCache[index] = e;
             const curDiff = Math.hypot(evCache[0].clientX - evCache[1].clientX, evCache[0].clientY - evCache[1].clientY);
             if (prevDiff > 0) {
-                scale = Math.min(Math.max(0.1, scale * (curDiff / prevDiff)), 5);
+                scale = Math.min(Math.max(0.1, scale * (curDiff / prevDiff)), 8); // Zoom op til 8x
                 canvas.style.transform = `scale(${scale})`;
             }
             prevDiff = curDiff;
         }
     });
+
+    function handleAction(e) {
+        if (evCache.length >= 2) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / scale;
+        const y = (e.clientY - rect.top) / scale;
+        const gridC = Math.floor((x - OFFSET) / SIZE);
+        const gridR = Math.floor((y - OFFSET) / SIZE);
+        if (gridR >= 0 && gridR < ROWS && gridC >= 0 && gridC < COLS) {
+            saveHistory();
+            const mode = document.getElementById('mode').value;
+            if (mode === 'erase') gridData[gridR][gridC] = null;
+            else if (mode === 'fill') gridData[gridR][gridC] = (gridData[gridR][gridC] === 'fill' ? null : 'fill');
+            else gridData[gridR][gridC] = (gridData[gridR][gridC] === mode ? null : mode);
+            draw();
+        }
+    }
 
     function togglePan() { isPan = !isPan; document.getElementById('panBtn').classList.toggle('active-tool'); }
 
