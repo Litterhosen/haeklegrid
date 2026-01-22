@@ -10,12 +10,14 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Skjul Streamlit UI elementer
+st.markdown("<style>header, footer, .stDeployButton {display:none !important;} [data-testid='stHeader'] {display:none !important;}</style>", unsafe_allow_html=True)
+
 # ---------- SIDEBAR ----------
 with st.sidebar:
     st.header("Indstillinger")
-
-    cols = st.number_input("Kolonner", min_value=120, max_value=400, value=120)
-    rows = st.number_input("Rækker", min_value=120, max_value=400, value=120)
+    cols = st.number_input("Kolonner", min_value=5, max_value=400, value=120)
+    rows = st.number_input("Rækker", min_value=5, max_value=400, value=120)
     cell_size = st.slider("Zoom (feltstørrelse)", 5, 60, 20)
 
     st.divider()
@@ -27,106 +29,46 @@ with st.sidebar:
         arr = np.array(img)
         import_data = np.where(arr.flatten() < 128)[0].tolist()
 
-    st.write("Klik udenfor panelet for at lukke")
-
-# ---------- HTML ----------
-html = """
+# ---------- HTML & JAVASCRIPT ----------
+html_code = """
 <!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-
 <style>
-body {
-    margin: 0;
-    background: #f2f2f2;
-    font-family: -apple-system, Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-}
-
-.toolbar {
-    position: sticky;
-    top: 0;
-    background: white;
-    padding: 10px;
-    border-bottom: 1px solid #ddd;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    z-index: 1000;
-    justify-content: center;
-}
-
-button, select {
-    padding: 10px 14px;
-    border-radius: 8px;
-    border: 1px solid #ccc;
-    background: white;
-    cursor: pointer;
-    font-weight: 600;
-}
-
+body { margin: 0; background: #f2f2f2; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
+.toolbar { position: sticky; top: 0; background: white; padding: 10px; border-bottom: 1px solid #ddd; display: flex; flex-wrap: wrap; gap: 8px; z-index: 1000; justify-content: center; }
+button, select { padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; background: white; cursor: pointer; font-weight: 600; }
 button.primary { background: #007aff; color: white; border: none; }
-button.active-tool { background: #5856d6; color: white; }
+button.active-tool { background: #5856d6 !important; color: white !important; }
+.grid-wrap { flex: 1; overflow: auto; padding: 40px; background: #e5e5e5; display: flex; justify-content: center; }
+.grid { display: grid; gap: 1px; background: #ccc; border: 1px solid #999; width: fit-content; }
+.cell { background: white; width: var(--sz); height: var(--sz); display: flex; align-items: center; justify-content: center; font-weight: bold; user-select: none; }
+.cell.active { background: black !important; }
+.pan-active .cell { pointer-events: none; }
+.pan-active { cursor: grab; }
 
-.grid-wrap {
-    flex: 1;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: 20px;
-    background: #e5e5e5;
+@media print {
+    .toolbar { display: none !important; }
+    .grid-wrap { padding: 0; overflow: visible; display: block; }
+    .grid { gap: 0; border: 1px solid black; }
+    .cell { border: 0.1pt solid black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
-
-.grid {
-    display: grid;
-    gap: 1px;
-    width: fit-content;
-    margin: 0 auto;
-    background: white;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
-}
-
-.cell {
-    background: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    user-select: none;
-    -webkit-print-color-adjust: exact;
-}
-
-.cell.active {
-    background: black;
-    color: white;
-}
-
-/* Pan-mode */
-.pan-mode .cell {
-    pointer-events: none;
-    cursor: grab;
-}
-.grid-wrap.pan-active { cursor: grab; }
 </style>
 </head>
-
 <body>
 
 <div class="toolbar">
     <select id="mode">
-        <option value="fill">Fyld</option>
-        <option value="X">X</option>
-        <option value="O">O</option>
+        <option value="fill">Sort Felt</option>
+        <option value="X">Symbol X</option>
+        <option value="O">Symbol O</option>
         <option value="erase">Slet</option>
     </select>
-
-    <button id="panBtn" onclick="togglePan()">Panorer</button>
-    <button class="primary" onclick="exportPNG()">Gem PNG</button>
-    <button onclick="window.print()">PDF</button>
-    <button onclick="clearGrid()">Ryd</button>
+    <button id="panBtn" onclick="togglePan()">✋ Panorer</button>
+    <button class="primary" onclick="exportSmartPNG()">📸 Gem Billede</button>
+    <button onclick="window.print()">🖨️ PDF</button>
+    <button onclick="clearGrid()">🗑️ Ryd</button>
 </div>
 
 <div class="grid-wrap" id="view">
@@ -143,20 +85,18 @@ let isPan = false;
 const grid = document.getElementById("grid");
 const view = document.getElementById("view");
 
-grid.style.gridTemplateColumns = "repeat(" + COLS + ", " + SIZE + "px)";
+grid.style.setProperty('--sz', SIZE + "px");
+grid.style.gridTemplateColumns = `repeat(${COLS}, ${SIZE}px)`;
 
-// Byg grid
+// Byg grid effektivt
+const fragment = document.createDocumentFragment();
 for (let i = 0; i < ROWS * COLS; i++) {
     const cell = document.createElement("div");
     cell.className = "cell";
-    cell.style.width = SIZE + "px";
-    cell.style.height = SIZE + "px";
-    cell.style.fontSize = (SIZE * 0.6) + "px";
-
-    cell.onclick = function () {
+    cell.style.fontSize = (SIZE * 0.7) + "px";
+    cell.onclick = function() {
         if (isPan) return;
         const mode = document.getElementById("mode").value;
-
         if (mode === "fill") {
             cell.textContent = "";
             cell.classList.toggle("active");
@@ -165,75 +105,96 @@ for (let i = 0; i < ROWS * COLS; i++) {
             cell.classList.remove("active");
         } else {
             cell.classList.remove("active");
-            cell.textContent = cell.textContent === mode ? "" : mode;
+            cell.textContent = (cell.textContent === mode) ? "" : mode;
         }
     };
-
-    grid.appendChild(cell);
+    fragment.appendChild(cell);
 }
+grid.appendChild(fragment);
 
-// Import billede
+// Import data
 IMPORT.forEach(idx => {
-    const c = idx % COLS;
-    const r = Math.floor(idx / COLS);
-    const cell = grid.children[r * COLS + c];
-    if (cell) cell.classList.add("active");
+    if(grid.children[idx]) grid.children[idx].classList.add("active");
 });
 
 function togglePan() {
     isPan = !isPan;
     document.getElementById("panBtn").classList.toggle("active-tool");
-    grid.classList.toggle("pan-mode");
     view.classList.toggle("pan-active");
     view.style.touchAction = isPan ? "auto" : "none";
 }
 
 function clearGrid() {
-    if (!confirm("Vil du slette alt?")) return;
-    document.querySelectorAll(".cell").forEach(c => {
-        c.textContent = "";
-        c.classList.remove("active");
-    });
+    if (confirm("Vil du slette alt?")) {
+        document.querySelectorAll(".cell").forEach(c => {
+            c.textContent = "";
+            c.classList.remove("active");
+        });
+    }
 }
 
-// Pixel-perfekt eksport med margin
-function exportPNG() {
-    const MARGIN = 80;
-    const SCALE = 3;
-
-    html2canvas(grid, {
-        backgroundColor: "#ffffff",
-        scale: SCALE
-    }).then(canvas => {
-        const out = document.createElement("canvas");
-        out.width = canvas.width + MARGIN * 2 * SCALE;
-        out.height = canvas.height + MARGIN * 2 * SCALE;
-
-        const ctx = out.getContext("2d");
-        ctx.imageSmoothingEnabled = false;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0,0,out.width,out.height);
-        ctx.drawImage(canvas, MARGIN * SCALE, MARGIN * SCALE);
-
-        const link = document.createElement("a");
-        link.download = "design-grid.png";
-        link.href = out.toDataURL("image/png");
-        link.click();
-    });
+// SMART EKSPORT (Løser nul-fil problemet ved at tegne direkte til Canvas)
+function exportSmartPNG() {
+    const btn = event.target;
+    btn.textContent = "Vent...";
+    
+    const MARGIN = 100; 
+    const SCALE = 2; // Høj opløsning
+    const drawSize = SIZE * SCALE;
+    
+    const out = document.createElement("canvas");
+    out.width = (COLS * drawSize) + (MARGIN * 2);
+    out.height = (ROWS * drawSize) + (MARGIN * 2);
+    const ctx = out.getContext("2d");
+    
+    // Baggrund & Margen
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, out.width, out.height);
+    
+    const cells = grid.children;
+    for (let i = 0; i < cells.length; i++) {
+        const r = Math.floor(i / COLS);
+        const c = i % COLS;
+        const x = MARGIN + (c * drawSize);
+        const y = MARGIN + (r * drawSize);
+        
+        if (cells[i].classList.contains("active")) {
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(x, y, drawSize, drawSize);
+        } else {
+            // Tegn gitterlinjer
+            ctx.strokeStyle = "#cccccc";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, drawSize, drawSize);
+            
+            // Tegn symboler (X/O)
+            const txt = cells[i].textContent;
+            if (txt) {
+                ctx.fillStyle = "#000000";
+                ctx.font = `bold ${drawSize * 0.7}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(txt, x + drawSize/2, y + drawSize/2);
+            }
+        }
+    }
+    
+    const link = document.createElement("a");
+    link.download = "moenster-design.png";
+    link.href = out.toDataURL("image/png");
+    link.click();
+    btn.textContent = "📸 Gem Billede";
 }
 </script>
-
 </body>
 </html>
 """
 
 final_html = (
-    html.replace("__COLS__", str(cols))
+    html_code.replace("__COLS__", str(cols))
         .replace("__ROWS__", str(rows))
         .replace("__SIZE__", str(cell_size))
         .replace("__IMPORT__", json.dumps(import_data))
 )
 
 components.html(final_html, height=1000, scrolling=False)
-
-st.caption("Grid Designer Pro – pan, import og pixel-sikker eksport")
