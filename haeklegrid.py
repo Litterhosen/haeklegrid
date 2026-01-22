@@ -19,7 +19,6 @@ html_code = """
 <style>
     body { margin: 0; font-family: sans-serif; background: #2c3e50; height: 100vh; overflow: hidden; }
     
-    /* FAST MENU - forsvinder ikke ved zoom */
     .toolbar { 
         position: fixed; top: 0; left: 0; right: 0;
         background: rgba(236, 240, 241, 0.95); 
@@ -94,9 +93,6 @@ html_code = """
         if (history.length > 30) history.shift();
         redoStack = [];
     }
-    
-    function undo() { if (history.length > 0) { redoStack.push(JSON.stringify(gridData)); gridData = JSON.parse(history.pop()); draw(); } }
-    function redo() { if (redoStack.length > 0) { history.push(JSON.stringify(gridData)); gridData = JSON.parse(redoStack.pop()); draw(); } }
 
     function initGrid() {
         COLS = parseInt(document.getElementById('cols').value);
@@ -108,57 +104,85 @@ html_code = """
         draw();
     }
 
-    function drawOnContext(targetCtx, s, off, isExport = false) {
+    function drawOnContext(tCtx, s, off, isExport = false) {
         const margin = isExport ? 50 : 0;
-        targetCtx.imageSmoothingEnabled = false;
-        targetCtx.fillStyle = "white";
-        targetCtx.fillRect(0, 0, targetCtx.canvas.width, targetCtx.canvas.height);
-        targetCtx.textAlign = "center";
-        targetCtx.textBaseline = "middle";
+        const totalW = (COLS * s) + off;
+        const totalH = (ROWS * s) + off;
 
+        tCtx.imageSmoothingEnabled = false;
+        tCtx.fillStyle = "white";
+        tCtx.fillRect(0, 0, tCtx.canvas.width, tCtx.canvas.height);
+
+        // 1. Tegn fyldte felter (Sort, X, O)
+        tCtx.textAlign = "center";
+        tCtx.textBaseline = "middle";
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
+                const val = gridData[r][c];
+                if (!val) continue;
                 const x = c * s + off + margin;
                 const y = r * s + off + margin;
-                
-                if (r === 0) {
-                    const colNum = c + 1;
-                    if (colNum === 1 || colNum % 5 === 0) {
-                        targetCtx.font = (colNum % 10 === 0) ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
-                        targetCtx.fillStyle = (colNum % 10 === 0) ? "#000" : "#777";
-                        targetCtx.fillText(colNum, x + s/2, (off/2) + margin);
-                    }
-                }
-                if (c === 0) {
-                    const rowNum = r + 1;
-                    if (rowNum === 1 || rowNum % 5 === 0) {
-                        targetCtx.font = (rowNum % 10 === 0) ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
-                        targetCtx.fillStyle = (rowNum % 10 === 0) ? "#000" : "#777";
-                        targetCtx.fillText(rowNum, (off/2) + margin, y + s/2);
-                    }
-                }
-
-                targetCtx.beginPath();
-                if ((r + 1) % 10 === 0 || (c + 1) % 10 === 0) {
-                    targetCtx.strokeStyle = "#444"; targetCtx.lineWidth = isExport ? 2 : 1.5;
-                } else if ((r + 1) % 5 === 0 || (c + 1) % 5 === 0) {
-                    targetCtx.strokeStyle = "#888"; targetCtx.lineWidth = 1;
-                } else {
-                    targetCtx.strokeStyle = "#ddd"; targetCtx.lineWidth = 0.5;
-                }
-                targetCtx.strokeRect(x, y, s, s);
-                
-                const val = gridData[r][c];
                 if (val === 'fill') {
-                    targetCtx.fillStyle = "black";
-                    targetCtx.fillRect(x, y, s, s);
-                } else if (val) {
-                    targetCtx.fillStyle = "black";
-                    targetCtx.font = `bold ${s * 0.6}px Arial`;
-                    targetCtx.fillText(val, x + s/2, y + s/2);
+                    tCtx.fillStyle = "black";
+                    tCtx.fillRect(x, y, s, s);
+                } else {
+                    tCtx.fillStyle = "black";
+                    tCtx.font = `bold ${s * 0.6}px Arial`;
+                    tCtx.fillText(val, x + s/2, y + s/2);
                 }
             }
         }
+
+        // 2. Tegn Gitterlinjer (Lodrette og Vandrette)
+        for (let i = 0; i <= COLS; i++) {
+            const x = i * s + off + margin;
+            tCtx.beginPath();
+            tCtx.moveTo(x, off + margin);
+            tCtx.lineTo(x, totalH + margin);
+            styleLine(tCtx, i, isExport);
+            tCtx.stroke();
+            
+            // Tal for kolonner
+            if (i < COLS) {
+                const num = i + 1;
+                if (num === 1 || num % 5 === 0) {
+                    drawLabel(tCtx, num, x + s/2, (off/2) + margin, off, num % 10 === 0);
+                }
+            }
+        }
+
+        for (let j = 0; j <= ROWS; j++) {
+            const y = j * s + off + margin;
+            tCtx.beginPath();
+            tCtx.moveTo(off + margin, y);
+            tCtx.lineTo(totalW + margin, y);
+            styleLine(tCtx, j, isExport);
+            tCtx.stroke();
+
+            // Tal for rækker
+            if (j < ROWS) {
+                const num = j + 1;
+                if (num === 1 || num % 5 === 0) {
+                    drawLabel(tCtx, num, (off/2) + margin, y + s/2, off, num % 10 === 0);
+                }
+            }
+        }
+    }
+
+    function styleLine(tCtx, index, isExport) {
+        if (index % 10 === 0) {
+            tCtx.strokeStyle = "#000"; tCtx.lineWidth = isExport ? 2 : 1.5;
+        } else if (index % 5 === 0) {
+            tCtx.strokeStyle = "#666"; tCtx.lineWidth = isExport ? 1.5 : 1.0;
+        } else {
+            tCtx.strokeStyle = "#ccc"; tCtx.lineWidth = 0.5;
+        }
+    }
+
+    function drawLabel(tCtx, text, x, y, off, isMajor) {
+        tCtx.font = isMajor ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
+        tCtx.fillStyle = isMajor ? "#000" : "#777";
+        tCtx.fillText(text, x, y);
     }
 
     function draw() { drawOnContext(ctx, SIZE, OFFSET, false); }
@@ -172,24 +196,17 @@ html_code = """
         drawOnContext(out.getContext('2d'), s, off, true);
         const url = out.toDataURL("image/png", 1.0);
         if(type === 'png') {
-            const a = document.createElement('a'); a.download = "design.png"; a.href = url; a.click();
+            const a = document.createElement('a'); a.download = "pixel-perfect-grid.png"; a.href = url; a.click();
         } else {
             const w = window.open();
             w.document.write(`<html><body style="margin:0;padding:20px;display:flex;justify-content:center;background:#fff;"><img src="${url}" style="max-width:98%;height:auto;"><script>setTimeout(()=>window.print(),600);<\\/script></body></html>`);
         }
     }
 
+    // Touch & Input Logic (Uændret men stabil)
     let isDown = false, evCache = [], prevDiff = -1;
-    canvas.addEventListener('pointerdown', e => {
-        if (isPan) { isDown = true; return; }
-        if (e.pointerType === 'touch') evCache.push(e);
-        handleAction(e);
-    });
-    window.addEventListener('pointerup', e => {
-        isDown = false;
-        evCache = evCache.filter(ev => ev.pointerId !== e.pointerId);
-        if (evCache.length < 2) prevDiff = -1;
-    });
+    canvas.addEventListener('pointerdown', e => { if (isPan) { isDown = true; return; } if (e.pointerType === 'touch') evCache.push(e); handleAction(e); });
+    window.addEventListener('pointerup', e => { isDown = false; evCache = evCache.filter(ev => ev.pointerId !== e.pointerId); if (evCache.length < 2) prevDiff = -1; });
     canvas.addEventListener('pointermove', e => {
         if (isPan && isDown) { vp.scrollLeft -= e.movementX; vp.scrollTop -= e.movementY; return; }
         if (e.pointerType === 'touch' && evCache.length === 2) {
@@ -220,7 +237,10 @@ html_code = """
     }
 
     function togglePan() { isPan = !isPan; document.getElementById('panBtn').classList.toggle('active-tool'); }
-
+    function undo() { if (history.length > 0) { redoStack.push(JSON.stringify(gridData)); gridData = JSON.parse(history.pop()); draw(); } }
+    function redo() { if (redoStack.length > 0) { history.push(JSON.stringify(gridData)); gridData = JSON.parse(redoStack.pop()); draw(); } }
+    function resetCanvas() { if(confirm("Ryd alt?")) initGrid(); }
+    
     document.getElementById('imgInput').onchange = function(e) {
         const reader = new FileReader();
         reader.onload = function(event) {
@@ -241,7 +261,6 @@ html_code = """
         reader.readAsDataURL(e.target.files[0]);
     };
 
-    function resetCanvas() { if(confirm("Ryd alt?")) initGrid(); }
     initGrid();
 </script>
 </body>
