@@ -4,7 +4,6 @@ import json
 
 st.set_page_config(page_title="Grid Designer Pro", layout="wide", initial_sidebar_state="collapsed")
 
-# Fjern Streamlit UI
 st.markdown("""
     <style>
     header, footer, .stDeployButton, [data-testid="stHeader"] {display:none !important;}
@@ -28,11 +27,9 @@ html_code = """
     button, select, input { padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; cursor: pointer; font-size: 11px; height: 36px; }
     .btn-blue { background: #3498db; color: white; border: none; }
     .btn-green { background: #27ae60; color: white; border: none; }
-    .btn-red { background: #e74c3c; color: white; border: none; }
     .active-tool { background: #f1c40f !important; color: black !important; }
     .viewport { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; background: #34495e; touch-action: none; }
-    canvas { background: white; box-shadow: 0 0 30px rgba(0,0,0,0.5); transform-origin: 0 0; image-rendering: pixelated; }
-    #imgInput { width: 90px; font-size: 9px; }
+    canvas { background: white; box-shadow: 0 0 30px rgba(0,0,0,0.5); transform-origin: 0 0; image-rendering: -moz-crisp-edges; image-rendering: pixelated; }
 </style>
 </head>
 <body>
@@ -43,8 +40,8 @@ html_code = """
         <button onclick="initGrid()">OK</button>
     </div>
     <div class="group">
-        <button onclick="undo()" title="Fortryd">↩️</button>
-        <button onclick="redo()" title="Gendan">↪️</button>
+        <button onclick="undo()">↩️</button>
+        <button onclick="redo()">↪️</button>
     </div>
     <div class="group">
         <select id="mode">
@@ -56,10 +53,10 @@ html_code = """
         <button id="panBtn" onclick="togglePan()">✋ PAN</button>
     </div>
     <div class="group">
-        <input type="file" id="imgInput" accept="image/*">
-        <button class="btn-blue" onclick="exportData('png')">📸</button>
-        <button class="btn-green" onclick="exportData('pdf')">🖨️</button>
-        <button class="btn-red" onclick="resetCanvas()">🗑️</button>
+        <input type="file" id="imgInput" accept="image/*" style="width:90px; font-size:9px;">
+        <button class="btn-blue" onclick="exportSmart('png')">📸 PNG</button>
+        <button class="btn-green" onclick="exportSmart('pdf')">🖨️ PDF</button>
+        <button onclick="resetCanvas()">🗑️</button>
     </div>
 </div>
 
@@ -68,7 +65,7 @@ html_code = """
 </div>
 
 <script>
-    let COLS, ROWS, SIZE = 25, OFFSET = 40;
+    let COLS, ROWS, SIZE = 25, OFFSET = 35;
     let gridData = [], history = [], redoStack = [];
     let isPan = false, scale = 1.0;
     const canvas = document.getElementById('c'), ctx = canvas.getContext('2d'), vp = document.getElementById('vp');
@@ -90,72 +87,113 @@ html_code = """
         draw();
     }
 
-    function draw() {
-        ctx.setTransform(1,0,0,1,0,0);
-        ctx.fillStyle = "white";
-        ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.font = "10px Arial"; ctx.fillStyle = "#7f8c8d"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    function drawOnContext(targetCtx, s, off, isExport = false) {
+        const w = (COLS * s) + off;
+        const h = (ROWS * s) + off;
+        
+        targetCtx.fillStyle = "white";
+        targetCtx.fillRect(0, 0, w, h);
+        
+        targetCtx.font = `${off * 0.4}px Arial`;
+        targetCtx.fillStyle = "#888";
+        targetCtx.textAlign = "center";
+        targetCtx.textBaseline = "middle";
 
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
-                const x = c * SIZE + OFFSET, y = r * SIZE + OFFSET;
-                if (r === 0 && (c + 1) % 5 === 0) ctx.fillText(c + 1, x + SIZE/2, OFFSET/2);
-                if (c === 0 && (r + 1) % 5 === 0) ctx.fillText(r + 1, OFFSET/2, y + SIZE/2);
+                const x = c * s + off;
+                const y = r * s + off;
                 
-                ctx.beginPath();
-                ctx.strokeStyle = ((r+1)%5===0 || (c+1)%5===0) ? "#bdc3c7" : "#ecf0f1";
-                ctx.lineWidth = ((r+1)%5===0 || (c+1)%5===0) ? 1.5 : 1;
-                ctx.strokeRect(x, y, SIZE, SIZE);
+                // Tal (1,1 i øverste venstre hjørne)
+                if (r === 0 && (c + 1) % 5 === 0) targetCtx.fillText(c + 1, x + s/2, off/2);
+                if (c === 0 && (r + 1) % 5 === 0) targetCtx.fillText(r + 1, off/2, y + s/2);
+                
+                targetCtx.beginPath();
+                targetCtx.strokeStyle = ((r+1)%5===0 || (c+1)%5===0) ? "#999" : "#ddd";
+                targetCtx.lineWidth = isExport ? 1.5 : 1;
+                targetCtx.strokeRect(x, y, s, s);
                 
                 const val = gridData[r][c];
-                if (val === 'fill') { ctx.fillStyle = "black"; ctx.fillRect(x+1, y+1, SIZE-2, SIZE-2); }
-                else if (val) { ctx.fillStyle = "black"; ctx.font = `bold ${SIZE*0.6}px Arial`; ctx.fillText(val, x+SIZE/2, y+SIZE/2); ctx.font = "10px Arial"; }
+                if (val === 'fill') {
+                    targetCtx.fillStyle = "black";
+                    targetCtx.fillRect(x, y, s, s);
+                } else if (val) {
+                    targetCtx.fillStyle = "black";
+                    targetCtx.font = `bold ${s * 0.6}px Arial`;
+                    targetCtx.fillText(val, x + s/2, y + s/2);
+                    targetCtx.font = `${off * 0.4}px Arial`;
+                }
             }
         }
     }
 
-    let isDown = false, evCache = [], prevDiff = -1;
+    function draw() { drawOnContext(ctx, SIZE, OFFSET, false); }
 
+    // Eksport funktion med høj opløsning og korrekte proportioner
+    function exportSmart(type) {
+        const exportScale = 2; // Gør billedet dobbelt så skarpt
+        const s = SIZE * exportScale;
+        const off = OFFSET * exportScale;
+        
+        const out = document.createElement('canvas');
+        out.width = (COLS * s) + off + (20 * exportScale); // ekstra margen
+        out.height = (ROWS * s) + off + (20 * exportScale);
+        const oCtx = out.getContext('2d');
+        
+        drawOnContext(oCtx, s, off, true);
+        
+        const url = out.toDataURL("image/png", 1.0);
+        
+        if(type === 'png') {
+            const a = document.createElement('a');
+            a.download = "grid-design-sharp.png"; a.href = url; a.click();
+        } else {
+            const w = window.open();
+            // PDF fix: ingen stræk, centreret billede
+            w.document.write(`
+                <html>
+                <body style="margin:0; padding:40px; background:#fff; display:flex; justify-content:center;">
+                    <img src="${url}" style="max-width:100%; height:auto; object-fit:contain; box-shadow: 0 0 10px #ccc;">
+                    <script>setTimeout(() => { window.print(); }, 500);<\\/script>
+                </body>
+                </html>
+            `);
+        }
+    }
+
+    // Touch/Pointer logik
+    let isDown = false, evCache = [], prevDiff = -1;
     canvas.addEventListener('pointerdown', e => {
         if (isPan) { isDown = true; return; }
         if (e.pointerType === 'touch') evCache.push(e);
         handleAction(e);
     });
-
     window.addEventListener('pointerup', e => {
         isDown = false;
         evCache = evCache.filter(ev => ev.pointerId !== e.pointerId);
         if (evCache.length < 2) prevDiff = -1;
     });
-
     canvas.addEventListener('pointermove', e => {
         if (isPan && isDown) {
-            vp.scrollLeft -= e.movementX;
-            vp.scrollTop -= e.movementY;
-            return;
+            vp.scrollLeft -= e.movementX; vp.scrollTop -= e.movementY; return;
         }
-        if (e.pointerType === 'touch') {
+        if (e.pointerType === 'touch' && evCache.length === 2) {
             const index = evCache.findIndex(ev => ev.pointerId === e.pointerId);
             if (index > -1) evCache[index] = e;
-            if (evCache.length === 2) {
-                const curDiff = Math.hypot(evCache[0].clientX - evCache[1].clientX, evCache[0].clientY - evCache[1].clientY);
-                if (prevDiff > 0) {
-                    let zoom = curDiff / prevDiff;
-                    scale = Math.min(Math.max(0.2, scale * zoom), 5);
-                    canvas.style.transform = `scale(${scale})`;
-                }
-                prevDiff = curDiff;
+            const curDiff = Math.hypot(evCache[0].clientX - evCache[1].clientX, evCache[0].clientY - evCache[1].clientY);
+            if (prevDiff > 0) {
+                scale = Math.min(Math.max(0.2, scale * (curDiff / prevDiff)), 5);
+                canvas.style.transform = `scale(${scale})`;
             }
+            prevDiff = curDiff;
         }
     });
 
     function handleAction(e) {
         if (evCache.length >= 2) return;
         const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / scale;
-        const y = (e.clientY - rect.top) / scale;
-        const gridC = Math.floor((x - OFFSET) / SIZE);
-        const gridR = Math.floor((y - OFFSET) / SIZE);
+        const gridC = Math.floor(( (e.clientX - rect.left) / scale - OFFSET) / SIZE);
+        const gridR = Math.floor(( (e.clientY - rect.top) / scale - OFFSET) / SIZE);
 
         if (gridR >= 0 && gridR < ROWS && gridC >= 0 && gridC < COLS) {
             saveHistory();
@@ -167,16 +205,20 @@ html_code = """
         }
     }
 
-    // --- Billedimport logik ---
+    function togglePan() {
+        isPan = !isPan;
+        document.getElementById('panBtn').classList.toggle('active-tool');
+    }
+
     document.getElementById('imgInput').onchange = function(e) {
         const reader = new FileReader();
         reader.onload = function(event) {
             const img = new Image();
             img.onload = function() {
-                saveHistory(); // Gem tilstand før import
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = COLS; tempCanvas.height = ROWS;
-                const tCtx = tempCanvas.getContext('2d');
+                saveHistory();
+                const tCanvas = document.createElement('canvas');
+                tCanvas.width = COLS; tCanvas.height = ROWS;
+                const tCtx = tCanvas.getContext('2d');
                 tCtx.drawImage(img, 0, 0, COLS, ROWS);
                 const pix = tCtx.getImageData(0, 0, COLS, ROWS).data;
                 for(let i=0; i<pix.length; i+=4) {
@@ -189,22 +231,6 @@ html_code = """
         }
         reader.readAsDataURL(e.target.files[0]);
     };
-
-    function togglePan() {
-        isPan = !isPan;
-        document.getElementById('panBtn').classList.toggle('active-tool');
-    }
-
-    function exportData(type) {
-        const url = canvas.toDataURL("image/png");
-        if(type === 'png') {
-            const a = document.createElement('a');
-            a.download = "crochet-design.png"; a.href = url; a.click();
-        } else {
-            const w = window.open();
-            w.document.write(`<html><body style="margin:0;display:flex;justify-content:center;"><img src="${url}" style="max-width:95%;height:auto;" onload="window.print();"></body></html>`);
-        }
-    }
 
     function resetCanvas() { if(confirm("Ryd alt?")) initGrid(); }
     initGrid();
