@@ -18,16 +18,28 @@ html_code = """
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
     body { margin: 0; font-family: sans-serif; background: #2c3e50; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-    .toolbar { background: #ecf0f1; padding: 5px; display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; border-bottom: 2px solid #bdc3c7; z-index: 100; }
+    .toolbar { 
+        background: #ecf0f1; padding: 5px; display: flex; flex-wrap: wrap; gap: 5px; 
+        justify-content: center; align-items: center; border-bottom: 2px solid #bdc3c7; z-index: 100;
+    }
     .group { display: flex; gap: 4px; align-items: center; border: 1px solid #ddd; padding: 4px; border-radius: 6px; background: #fff; }
     button, select, input { padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; cursor: pointer; font-size: 11px; height: 36px; }
     .btn-blue { background: #3498db; color: white; border: none; }
     .btn-green { background: #27ae60; color: white; border: none; }
-    .viewport { flex: 1; overflow: auto; background: #34495e; touch-action: none; position: relative; }
+    .active-tool { background: #f1c40f !important; color: black !important; }
+    
+    .viewport { flex: 1; overflow: auto; background: #34495e; display: block; touch-action: none; }
+    
+    /* BEVAR PIXEL KVALITET VED ZOOM */
     canvas { 
-        background: white; transform-origin: 0 0; 
-        image-rendering: pixelated; 
-        image-rendering: crisp-edges;
+        background: white; 
+        transform-origin: 0 0; 
+        display: block; 
+        image-rendering: optimizeSpeed;             /* Eldre browsers */
+        image-rendering: -moz-crisp-edges;          /* Firefox */
+        image-rendering: -webkit-optimize-contrast; /* Safari */
+        image-rendering: pixelated;                 /* Moderne browsers */
+        image-rendering: optimize-contrast;         /* CSS spec */
     }
 </style>
 </head>
@@ -38,23 +50,33 @@ html_code = """
         <input type="number" id="rows" value="60" style="width:40px">x<input type="number" id="cols" value="60" style="width:40px">
         <button onclick="initGrid()">OK</button>
     </div>
-    <div class="group"><button onclick="undo()">↩️</button><button onclick="redo()">↪️</button></div>
     <div class="group">
-        <select id="mode"><option value="fill">⚫ SORT</option><option value="X">❌ X</option><option value="O">⭕ O</option><option value="erase">⚪ SLET</option></select>
+        <button onclick="undo()">↩️</button>
+        <button onclick="redo()">↪️</button>
+    </div>
+    <div class="group">
+        <select id="mode">
+            <option value="fill">⚫ SORT</option>
+            <option value="X">❌ X</option>
+            <option value="O">⭕ O</option>
+            <option value="erase">⚪ SLET</option>
+        </select>
         <button id="panBtn" onclick="togglePan()">✋ PAN</button>
     </div>
     <div class="group">
-        <input type="file" id="imgInput" accept="image/*" style="width:80px; font-size:8px;">
-        <button class="btn-blue" onclick="exportFinal('png')">📸 PNG</button>
-        <button class="btn-green" onclick="exportFinal('pdf')">🖨️ PDF</button>
+        <input type="file" id="imgInput" accept="image/*" style="width:90px; font-size:9px;">
+        <button class="btn-blue" onclick="exportSmart('png')">📸 PNG</button>
+        <button class="btn-green" onclick="exportSmart('pdf')">🖨️ PDF</button>
         <button onclick="resetCanvas()">🗑️</button>
     </div>
 </div>
 
-<div class="viewport" id="vp"><canvas id="c"></canvas></div>
+<div class="viewport" id="vp">
+    <canvas id="c"></canvas>
+</div>
 
 <script>
-    let COLS, ROWS, SIZE = 25, OFFSET = 40;
+    let COLS, ROWS, SIZE = 25, OFFSET = 35;
     let gridData = [], history = [], redoStack = [];
     let isPan = false, scale = 1.0;
     const canvas = document.getElementById('c'), ctx = canvas.getContext('2d'), vp = document.getElementById('vp');
@@ -64,6 +86,9 @@ html_code = """
         if (history.length > 30) history.shift();
         redoStack = [];
     }
+    
+    function undo() { if (history.length > 0) { redoStack.push(JSON.stringify(gridData)); gridData = JSON.parse(history.pop()); draw(); } }
+    function redo() { if (redoStack.length > 0) { history.push(JSON.stringify(gridData)); gridData = JSON.parse(redoStack.pop()); draw(); } }
 
     function initGrid() {
         COLS = parseInt(document.getElementById('cols').value);
@@ -71,107 +96,120 @@ html_code = """
         canvas.width = (COLS * SIZE) + OFFSET;
         canvas.height = (ROWS * SIZE) + OFFSET;
         gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
+        
+        // Sikr pixel-skarphed på canvas context
+        ctx.imageSmoothingEnabled = false;
         draw();
     }
 
-    function drawOnContext(tCtx, s, off, margin = 0) {
-        // Tving pixel-skarphed
-        tCtx.imageSmoothingEnabled = false;
-        tCtx.webkitImageSmoothingEnabled = false;
-        tCtx.mozImageSmoothingEnabled = false;
-
-        tCtx.fillStyle = "white";
-        tCtx.fillRect(0, 0, tCtx.canvas.width, tCtx.canvas.height);
+    function drawOnContext(targetCtx, s, off, isExport = false) {
+        const w = targetCtx.canvas.width;
+        const h = targetCtx.canvas.height;
         
-        tCtx.textAlign = "center";
-        tCtx.textBaseline = "middle";
+        // Hvis eksport, tilføj 40px ekstra hvid margen (Safe Zone)
+        const margin = isExport ? 40 : 0;
+        
+        targetCtx.imageSmoothingEnabled = false;
+        targetCtx.fillStyle = "white";
+        targetCtx.fillRect(0, 0, w, h);
+        
+        targetCtx.textAlign = "center";
+        targetCtx.textBaseline = "middle";
 
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
                 const x = c * s + off + margin;
                 const y = r * s + off + margin;
-
-                // Tal-margen (1, 5, 10...)
+                
+                // Tal i margenen
                 if (r === 0) {
                     const colNum = c + 1;
                     if (colNum === 1 || colNum % 5 === 0) {
-                        tCtx.font = (colNum % 10 === 0) ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
-                        tCtx.fillStyle = (colNum % 10 === 0) ? "#000" : "#888";
-                        tCtx.fillText(colNum, x + s/2, (off/2) + margin);
+                        targetCtx.font = (colNum % 10 === 0) ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
+                        targetCtx.fillStyle = (colNum % 10 === 0) ? "#000" : "#777";
+                        targetCtx.fillText(colNum, x + s/2, (off/2) + margin);
                     }
                 }
                 if (c === 0) {
                     const rowNum = r + 1;
                     if (rowNum === 1 || rowNum % 5 === 0) {
-                        tCtx.font = (rowNum % 10 === 0) ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
-                        tCtx.fillStyle = (rowNum % 10 === 0) ? "#000" : "#888";
-                        tCtx.fillText(rowNum, (off/2) + margin, y + s/2);
+                        targetCtx.font = (rowNum % 10 === 0) ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
+                        targetCtx.fillStyle = (rowNum % 10 === 0) ? "#000" : "#777";
+                        targetCtx.fillText(rowNum, (off/2) + margin, y + s/2);
                     }
                 }
 
-                // Gitter-linjer (Hierarki: 1, 5, 10)
-                tCtx.beginPath();
+                // Gitterlinjer
+                targetCtx.beginPath();
                 if ((r + 1) % 10 === 0 || (c + 1) % 10 === 0) {
-                    tCtx.strokeStyle = "#444"; tCtx.lineWidth = 1.5;
+                    targetCtx.strokeStyle = "#444"; 
+                    targetCtx.lineWidth = isExport ? 2 : 1.5;
                 } else if ((r + 1) % 5 === 0 || (c + 1) % 5 === 0) {
-                    tCtx.strokeStyle = "#999"; tCtx.lineWidth = 1;
+                    targetCtx.strokeStyle = "#888";
+                    targetCtx.lineWidth = 1;
                 } else {
-                    tCtx.strokeStyle = "#ddd"; tCtx.lineWidth = 0.5;
+                    targetCtx.strokeStyle = "#ddd";
+                    targetCtx.lineWidth = 0.5;
                 }
-                tCtx.strokeRect(x, y, s, s);
+                targetCtx.strokeRect(x, y, s, s);
                 
                 const val = gridData[r][c];
                 if (val === 'fill') {
-                    tCtx.fillStyle = "black";
-                    tCtx.fillRect(x, y, s, s);
+                    targetCtx.fillStyle = "black";
+                    targetCtx.fillRect(x, y, s, s);
                 } else if (val) {
-                    tCtx.fillStyle = "black";
-                    tCtx.font = `bold ${s * 0.6}px Arial`;
-                    tCtx.fillText(val, x + s/2, y + s/2);
+                    targetCtx.fillStyle = "black";
+                    targetCtx.font = `bold ${s * 0.6}px Arial`;
+                    targetCtx.fillText(val, x + s/2, y + s/2);
                 }
             }
         }
     }
 
-    function draw() { drawOnContext(ctx, SIZE, OFFSET, 0); }
+    function draw() { drawOnContext(ctx, SIZE, OFFSET, false); }
 
-    function exportFinal(type) {
-        const dpr = 2; // Høj opløsning
-        const s = SIZE * dpr;
-        const off = OFFSET * dpr;
-        const margin = 60; // Stor sikkerhedsmargen så intet skæres af fotos
-
+    function exportSmart(type) {
+        const exportScale = 2;
+        const s = SIZE * exportScale;
+        const off = OFFSET * exportScale;
+        const margin = 40 * exportScale; // Ekstra stor sikkerhedsmargen til mobiler
+        
         const out = document.createElement('canvas');
         out.width = (COLS * s) + off + (margin * 2);
         out.height = (ROWS * s) + off + (margin * 2);
         const oCtx = out.getContext('2d');
         
-        drawOnContext(oCtx, s, off, margin);
+        drawOnContext(oCtx, s, off, true);
         
         const url = out.toDataURL("image/png", 1.0);
         if(type === 'png') {
-            const a = document.createElement('a'); a.download = "design.png"; a.href = url; a.click();
+            const a = document.createElement('a'); a.download = "moenster-pixel-perfect.png"; a.href = url; a.click();
         } else {
             const w = window.open();
-            w.document.write(`<html><body style="margin:0;padding:20px;display:flex;justify-content:center;background:#eee;">
-                <img src="${url}" style="max-width:95%; height:auto; background:white; box-shadow:0 0 20px #999;">
-                <script>setTimeout(()=>window.print(),800);<\\/script></body></html>`);
+            w.document.write(`<html><body style="margin:0;padding:20px;display:flex;justify-content:center;background:#fff;"><img src="${url}" style="max-width:98%;height:auto;object-fit:contain;"><script>setTimeout(()=>window.print(),500);<\\/script></body></html>`);
         }
     }
 
-    // Touch & Zoom (Optimerede Pointer Events)
-    let evCache = [], prevDiff = -1, isDown = false;
-    canvas.addEventListener('pointerdown', e => { if(isPan) isDown=true; else handleAction(e); if(e.pointerType==='touch') evCache.push(e); });
-    window.addEventListener('pointerup', e => { isDown=false; evCache = evCache.filter(ev => ev.pointerId !== e.pointerId); if(evCache.length < 2) prevDiff = -1; });
-    
+    // Zoom og Input håndtering
+    let isDown = false, evCache = [], prevDiff = -1;
+    canvas.addEventListener('pointerdown', e => {
+        if (isPan) { isDown = true; return; }
+        if (e.pointerType === 'touch') evCache.push(e);
+        handleAction(e);
+    });
+    window.addEventListener('pointerup', e => {
+        isDown = false;
+        evCache = evCache.filter(ev => ev.pointerId !== e.pointerId);
+        if (evCache.length < 2) prevDiff = -1;
+    });
     canvas.addEventListener('pointermove', e => {
-        if(isPan && isDown) { vp.scrollLeft -= e.movementX; vp.scrollTop -= e.movementY; return; }
+        if (isPan && isDown) { vp.scrollLeft -= e.movementX; vp.scrollTop -= e.movementY; return; }
         if (e.pointerType === 'touch' && evCache.length === 2) {
             const index = evCache.findIndex(ev => ev.pointerId === e.pointerId);
             if (index > -1) evCache[index] = e;
             const curDiff = Math.hypot(evCache[0].clientX - evCache[1].clientX, evCache[0].clientY - evCache[1].clientY);
             if (prevDiff > 0) {
-                scale = Math.min(Math.max(0.1, scale * (curDiff / prevDiff)), 6);
+                scale = Math.min(Math.max(0.1, scale * (curDiff / prevDiff)), 8); // Zoom op til 8x
                 canvas.style.transform = `scale(${scale})`;
             }
             prevDiff = curDiff;
@@ -179,27 +217,24 @@ html_code = """
     });
 
     function handleAction(e) {
-        if(evCache.length >= 2) return;
+        if (evCache.length >= 2) return;
         const rect = canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / scale;
         const y = (e.clientY - rect.top) / scale;
-        const c = Math.floor((x - OFFSET) / SIZE);
-        const r = Math.floor((y - OFFSET) / SIZE);
-        if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+        const gridC = Math.floor((x - OFFSET) / SIZE);
+        const gridR = Math.floor((y - OFFSET) / SIZE);
+        if (gridR >= 0 && gridR < ROWS && gridC >= 0 && gridC < COLS) {
             saveHistory();
             const mode = document.getElementById('mode').value;
-            if (mode === 'erase') gridData[r][c] = null;
-            else if (mode === 'fill') gridData[r][c] = (gridData[r][c] === 'fill' ? null : 'fill');
-            else gridData[r][c] = (gridData[r][c] === mode ? null : mode);
+            if (mode === 'erase') gridData[gridR][gridC] = null;
+            else if (mode === 'fill') gridData[gridR][gridC] = (gridData[gridR][gridC] === 'fill' ? null : 'fill');
+            else gridData[gridR][gridC] = (gridData[gridR][gridC] === mode ? null : mode);
             draw();
         }
     }
 
-    function undo() { if (history.length > 0) { redoStack.push(JSON.stringify(gridData)); gridData = JSON.parse(history.pop()); draw(); } }
-    function redo() { if (redoStack.length > 0) { history.push(JSON.stringify(gridData)); gridData = JSON.parse(redoStack.pop()); draw(); } }
     function togglePan() { isPan = !isPan; document.getElementById('panBtn').classList.toggle('active-tool'); }
-    function resetCanvas() { if(confirm("Ryd alt?")) initGrid(); }
-    
+
     document.getElementById('imgInput').onchange = function(e) {
         const reader = new FileReader();
         reader.onload = function(event) {
@@ -220,6 +255,7 @@ html_code = """
         reader.readAsDataURL(e.target.files[0]);
     };
 
+    function resetCanvas() { if(confirm("Ryd alt?")) initGrid(); }
     initGrid();
 </script>
 </body>
