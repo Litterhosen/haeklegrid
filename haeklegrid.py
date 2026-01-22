@@ -2,7 +2,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 import numpy as np
 from PIL import Image
-import base64
 import json
 
 st.set_page_config(
@@ -20,16 +19,14 @@ with st.sidebar:
 
     st.divider()
     st.header("📥 Import")
-    uploaded_file = st.file_uploader("Konverter billede til net", type=["png", "jpg", "jpeg"])
+    uploaded_file = st.file_uploader("Konverter billede", type=["png", "jpg", "jpeg"])
     
     import_data = []
     if uploaded_file:
-        # Behandl billede med PIL
         img = Image.open(uploaded_file).convert("L").resize((cols, rows), Image.NEAREST)
-        # Find alle mørke pixels og lav en liste over deres index
         arr = np.array(img)
         import_data = np.where(arr.flatten() < 128)[0].tolist()
-        st.success(f"Billede klar! {len(import_data)} felter fundet.")
+        st.success(f"Billede indlæst!")
 
 # ---------- HTML & JAVASCRIPT ----------
 html_template = """
@@ -54,12 +51,11 @@ body {
     border-bottom: 1px solid #ccc;
     display: flex; flex-wrap: wrap; gap: 8px;
     z-index: 1001; justify-content: center;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 
 .grid-wrap {
     flex: 1; overflow: auto;
-    padding: 40px; display: flex;
+    padding: 20px; display: flex;
     justify-content: center; align-items: flex-start;
     -webkit-overflow-scrolling: touch;
 }
@@ -67,7 +63,7 @@ body {
 .grid {
     display: grid;
     gap: 1px; 
-    background-color: #999 !important;
+    background-color: #999;
     border: 1px solid #666;
     width: fit-content;
     background-color: white;
@@ -76,47 +72,61 @@ body {
 .cell {
     background-color: white;
     display: flex; align-items: center; justify-content: center;
-    font-weight: bold; user-select: none; cursor: pointer;
+    font-weight: bold; user-select: none;
     min-width: var(--sz); min-height: var(--sz);
 }
 
 .cell.active { background-color: black !important; color: white !important; }
 
+/* KNAP STYLER */
 button, select {
     padding: 10px 14px; border-radius: 8px;
     border: 1px solid #ccc; background: white;
-    font-size: 14px; font-weight: 600;
+    font-size: 13px; font-weight: 600; cursor: pointer;
 }
 
-.primary { background: #007aff !important; color: white !important; border: none; }
+.btn-png { background: #007aff; color: white; border: none; }
+.btn-svg { background: #34c759; color: white; border: none; }
 .btn-active { background: #5856d6 !important; color: white !important; }
 
 #loading {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     background: white; display: flex; justify-content: center;
-    align-items: center; z-index: 2000; font-weight: bold;
+    align-items: center; z-index: 2000;
 }
 
+/* PRINT OPSÆTNING: Tvinger gitteret frem på PDF */
 @media print {
     .toolbar { display: none !important; }
+    body { background: white; }
     .grid-wrap { overflow: visible; padding: 0; }
-    .cell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .grid { 
+        gap: 0; 
+        border: 0.5pt solid black;
+        background-color: transparent !important;
+    }
+    .cell { 
+        border: 0.2pt solid #000 !important; /* Tvinger gitterlinjer på PDF */
+        -webkit-print-color-adjust: exact; 
+        print-color-adjust: exact; 
+    }
 }
 </style>
 </head>
 <body>
 
-<div id="loading">Bygger mønster...</div>
+<div id="loading">Genererer grid...</div>
 
 <div class="toolbar">
     <select id="mode">
-        <option value="fill">⚫ Fyld</option>
+        <option value="fill">⚫ Sort</option>
         <option value="X">❌ X</option>
         <option value="O">⭕ O</option>
         <option value="erase">⚪ Slet</option>
     </select>
     <button id="panBtn" onclick="togglePan()">✋ Panorer</button>
-    <button class="primary" onclick="exportPNG()">💾 Gem PNG</button>
+    <button class="btn-png" onclick="exportPNG()">📸 Kamerarulle (PNG)</button>
+    <button class="btn-svg" onclick="exportSVG()">📐 SVG</button>
     <button onclick="window.print()">🖨️ PDF</button>
     <button onclick="clearGrid()">🗑️ Ryd</button>
 </div>
@@ -129,7 +139,7 @@ button, select {
 const COLS = __COLS__;
 const ROWS = __ROWS__;
 const SIZE = __SIZE__;
-const IMPORT_DATA = __IMPORT_DATA__; // Liste over index-numre der skal være sorte
+const IMPORT_DATA = __IMPORT_DATA__;
 
 let isPanMode = false;
 const grid = document.getElementById("grid");
@@ -139,19 +149,16 @@ grid.style.gridTemplateColumns = `repeat(${COLS}, ${SIZE}px)`;
 
 function generateGrid() {
     const fragment = document.createDocumentFragment();
-    const total = ROWS * COLS;
     const importSet = new Set(IMPORT_DATA);
 
-    for (let i = 0; i < total; i++) {
+    for (let i = 0; i < ROWS * COLS; i++) {
         const cell = document.createElement("div");
         cell.className = "cell";
         cell.style.width = SIZE + "px";
         cell.style.height = SIZE + "px";
         cell.style.fontSize = (SIZE * 0.7) + "px";
 
-        if (importSet.has(i)) {
-            cell.classList.add("active");
-        }
+        if (importSet.has(i)) cell.classList.add("active");
 
         cell.onclick = function () {
             if (isPanMode) return;
@@ -190,24 +197,52 @@ function clearGrid() {
     }
 }
 
+// PNG EKSPORT
 function exportPNG() {
-    const btn = event.target;
-    const oldText = btn.textContent;
-    btn.textContent = "Vent...";
-    html2canvas(grid, { backgroundColor: "#ffffff", scale: 1 }).then(canvas => {
+    html2canvas(grid, { backgroundColor: "#ffffff", scale: 2 }).then(canvas => {
         const link = document.createElement("a");
         link.download = "moenster.png";
-        link.href = canvas.toDataURL();
+        link.href = canvas.toDataURL("image/png");
         link.click();
-        btn.textContent = oldText;
     });
+}
+
+// SVG EKSPORT (Vektor)
+function exportSVG() {
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${COLS * SIZE}" height="${ROWS * SIZE}" viewBox="0 0 ${COLS * SIZE} ${ROWS * SIZE}">`;
+    svg += `<rect width="100%" height="100%" fill="white"/>`;
+    
+    const cells = document.querySelectorAll('.cell');
+    cells.forEach((cell, i) => {
+        const r = Math.floor(i / COLS);
+        const c = i % COLS;
+        const x = c * SIZE;
+        const y = r * SIZE;
+        
+        // Tegn ramme (grid)
+        svg += `<rect x="${x}" y="${y}" width="${SIZE}" height="${SIZE}" fill="none" stroke="#ccc" stroke-width="0.5"/>`;
+        
+        // Tegn indhold
+        if (cell.classList.contains('active')) {
+            svg += `<rect x="${x}" y="${y}" width="${SIZE}" height="${SIZE}" fill="black"/>`;
+        } else if (cell.textContent) {
+            svg += `<text x="${x + SIZE/2}" y="${y + SIZE/2 + SIZE*0.2}" font-family="Arial" font-size="${SIZE*0.7}" text-anchor="middle" fill="black">${cell.textContent}</text>`;
+        }
+    });
+    
+    svg += "</svg>";
+    const blob = new Blob([svg], {type: 'image/svg+xml'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "moenster.svg";
+    link.click();
 }
 </script>
 </body>
 </html>
 """
 
-# Indsæt værdier i HTML
 final_html = (html_template
     .replace("__COLS__", str(cols))
     .replace("__ROWS__", str(rows))
