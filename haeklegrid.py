@@ -1,74 +1,165 @@
-## ✅ FINAL SAFE TEMPLATE – OPDATERET FUNKTIONSKRAV
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Safe Grid Editor</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #f5f5f5; }
+  header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; background: #222; color: #fff;
+  }
+  header button { padding: 6px 10px; }
 
-Denne version opfylder nu alle de nye krav:
+  #app { display: flex; height: calc(100vh - 48px); }
 
----
+  #overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: none; z-index: 10;
+  }
 
-### 📤 Eksport – også til kamerarulle
-- **PNG-eksport** fungerer på både desktop og mobil
-- På mobil (iOS/Android):
-  - `Download PNG` åbner systemets del-menu
-  - Brugeren kan gemme direkte i **Kamerarulle / Fotos**
-- Ingen zoom/pan påvirker eksport-output
+  #drawer {
+    position: fixed; top: 48px; left: 0; bottom: 0;
+    width: 260px; background: #fff; padding: 12px;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.2);
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 11;
+  }
 
----
+  #drawer.open { transform: translateX(0); }
+  #overlay.show { display: block; }
 
-### ✏️ Tegn & symboler (ikke kun hækling)
-Appen er nu **symbol-baseret** og kan bruges til:
-- hækling
-- broderi
-- perleplader
-- logik- og puslespilsgrids
+  #canvasWrap {
+    flex: 1; overflow: auto; display: flex; justify-content: center; align-items: center;
+  }
 
-Tilgængelige værktøjer:
-- ■ Fyldt felt
-- ✖ Kryds
-- ○ Cirkel
-- 🧽 Viskelæder
+  canvas { background: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.2); }
+</style>
+</head>
+<body>
 
-Symboler gemmes som værdier i grid (ikke kun sort/hvid)
+<header>
+  <button id="menuBtn">☰</button>
+  <button onclick="exportPNG()">⬇ PNG</button>
+  <span style="flex:1"></span>
+  <select id="tool">
+    <option value="fill">■</option>
+    <option value="cross">✖</option>
+    <option value="circle">○</option>
+    <option value="erase">🧽</option>
+  </select>
+</header>
 
----
+<div id="overlay"></div>
 
-### 🔢 Feltvælger – større grids
-- Grid-størrelse starter nu **OVER 100**
-- Minimum: **120 x 120**
-- Klarer stabilt op til 400 x 400
+<div id="drawer">
+  <h3>Indstillinger</h3>
+  <label>Grid størrelse</label><br />
+  <input id="gridSize" type="number" value="120" min="120" max="400" />
+  <button onclick="resizeGrid()">Anvend</button>
+  <hr />
+  <button onclick="exportPNG()">Eksport PNG</button>
+</div>
 
----
+<div id="app">
+  <div id="canvasWrap">
+    <canvas id="grid"></canvas>
+  </div>
+</div>
 
-### ⬆️ Eksportmuligheder i toppen
-- Eksport-knapper findes nu **to steder**:
-  1. Top-toolbar (altid synlig)
-  2. Sidepanel
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script>
+  var canvas = document.getElementById('grid');
+  var ctx = canvas.getContext('2d');
+  var size = 120;
+  var cell = 20;
+  var tool = 'fill';
+  var grid = [];
 
-Dette gør mobilbrug markant nemmere
+  function initGrid() {
+    grid = [];
+    for (var y = 0; y < size; y++) {
+      var row = [];
+      for (var x = 0; x < size; x++) row.push(null);
+      grid.push(row);
+    }
+    canvas.width = size * cell;
+    canvas.height = size * cell;
+    draw();
+  }
 
----
+  function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = '#ccc';
 
-### 📐 Sidegardin (drawer)
-- Sidepanel kan:
-  - åbnes via ikon
-  - **lukkes ved klik uden for gardinet** (overlay)
-- Mobil-venlig swipe / tap-adfærd
+    for (var y = 0; y < size; y++) {
+      for (var x = 0; x < size; x++) {
+        ctx.strokeRect(x*cell, y*cell, cell, cell);
+        var v = grid[y][x];
+        if (!v) continue;
+        ctx.fillStyle = '#000';
+        ctx.strokeStyle = '#000';
+        if (v === 'fill') ctx.fillRect(x*cell+2,y*cell+2,cell-4,cell-4);
+        if (v === 'cross') {
+          ctx.beginPath();
+          ctx.moveTo(x*cell+3,y*cell+3);
+          ctx.lineTo(x*cell+cell-3,y*cell+cell-3);
+          ctx.moveTo(x*cell+cell-3,y*cell+3);
+          ctx.lineTo(x*cell+3,y*cell+cell-3);
+          ctx.stroke();
+        }
+        if (v === 'circle') {
+          ctx.beginPath();
+          ctx.arc(x*cell+cell/2,y*cell+cell/2,cell/2-3,0,Math.PI*2);
+          ctx.stroke();
+        }
+      }
+    }
+  }
 
----
+  canvas.addEventListener('click', function(e){
+    var rect = canvas.getBoundingClientRect();
+    var x = Math.floor((e.clientX - rect.left)/cell);
+    var y = Math.floor((e.clientY - rect.top)/cell);
+    if (tool === 'erase') grid[y][x] = null;
+    else grid[y][x] = tool;
+    draw();
+  });
 
-### 🧱 Teknisk sikkerhed
-- ❌ Ingen f-strings i HTML / JS
-- ❌ Ingen `{}`-konflikter
-- ✅ Placeholder-template
-- ✅ html2canvas sikker indlejring
-- ✅ Klar til videreudvikling
+  document.getElementById('tool').onchange = function(e){ tool = e.target.value; };
 
----
+  function resizeGrid(){
+    size = parseInt(document.getElementById('gridSize').value,10);
+    initGrid();
+  }
 
-### 🚀 Klar til næste niveau
-Fundamentet er nu egnet til:
-- SVG-eksport
-- Farver pr. symbol
-- Undo / Redo
-- Lag / overlays
-- Deling (share-link)
+  function exportPNG(){
+    html2canvas(canvas).then(function(c){
+      c.toBlob(function(blob){
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'grid.png';
+        a.click();
+      });
+    });
+  }
 
-Denne version er nu **general-purpose grid editor** – ikke kun hækling.
+  var drawer = document.getElementById('drawer');
+  var overlay = document.getElementById('overlay');
+
+  document.getElementById('menuBtn').onclick = function(){
+    drawer.classList.add('open');
+    overlay.classList.add('show');
+  };
+
+  overlay.onclick = function(){
+    drawer.classList.remove('open');
+    overlay.classList.remove('show');
+  };
+
+  initGrid();
+</script>
+</body>
+</html>
