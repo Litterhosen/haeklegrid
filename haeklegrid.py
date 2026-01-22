@@ -18,25 +18,19 @@ html_code = """
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
-    body { margin: 0; font-family: -apple-system, sans-serif; background: #2c3e50; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-    
+    body { margin: 0; font-family: sans-serif; background: #2c3e50; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
     .toolbar { 
         background: #ecf0f1; padding: 5px; display: flex; flex-wrap: wrap; gap: 5px; 
         justify-content: center; align-items: center; border-bottom: 2px solid #bdc3c7; z-index: 100;
     }
-    
-    .group { display: flex; gap: 5px; align-items: center; border: 1px solid #ddd; padding: 4px; border-radius: 6px; background: #fff; }
-
+    .group { display: flex; gap: 4px; align-items: center; border: 1px solid #ddd; padding: 4px; border-radius: 6px; background: #fff; }
     button, select, input { padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; cursor: pointer; font-size: 12px; height: 36px; }
-    label { font-size: 10px; color: #7f8c8d; font-weight: bold; }
-    
     .btn-blue { background: #3498db; color: white; border: none; }
     .btn-green { background: #27ae60; color: white; border: none; }
     .btn-red { background: #e74c3c; color: white; border: none; }
     .active-tool { background: #f1c40f !important; color: black !important; }
-
-    .viewport { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; background: #34495e; touch-action: none; position: relative; }
-    canvas { background: white; box-shadow: 0 0 30px rgba(0,0,0,0.5); cursor: crosshair; transform-origin: top left; }
+    .viewport { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; background: #34495e; touch-action: none; }
+    canvas { background: white; box-shadow: 0 0 30px rgba(0,0,0,0.5); transform-origin: 0 0; image-rendering: pixelated; }
 </style>
 </head>
 <body>
@@ -46,12 +40,10 @@ html_code = """
         <input type="number" id="rows" value="60" style="width:45px"> x <input type="number" id="cols" value="60" style="width:45px">
         <button onclick="initGrid()">OK</button>
     </div>
-    
     <div class="group">
         <button onclick="undo()">↩️</button>
         <button onclick="redo()">↪️</button>
     </div>
-
     <div class="group">
         <select id="mode">
             <option value="fill">⚫ SORT</option>
@@ -61,11 +53,10 @@ html_code = """
         </select>
         <button id="panBtn" onclick="togglePan()">✋ PAN</button>
     </div>
-
     <div class="group">
-        <button class="btn-blue" onclick="exportData('png')">📸 PNG</button>
-        <button class="btn-green" onclick="exportData('pdf')">🖨️ PDF</button>
-        <button class="btn-red" onclick="resetCanvas()">🗑️</button>
+        <button class="btn-blue" onclick="exportData('png')">📸</button>
+        <button class="btn-green" onclick="exportData('pdf')">🖨️</button>
+        <button onclick="resetCanvas()">🗑️</button>
     </div>
 </div>
 
@@ -74,39 +65,18 @@ html_code = """
 </div>
 
 <script>
-    let COLS, ROWS, SIZE = 25;
-    const OFFSET = 40;
-    let gridData = [];
-    let history = [];
-    let redoStack = [];
-    let isPan = false;
-    let scale = 1.0;
-    
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
-    const vp = document.getElementById('vp');
+    let COLS, ROWS, SIZE = 25, OFFSET = 40;
+    let gridData = [], history = [], redoStack = [];
+    let isPan = false, scale = 1.0;
+    const canvas = document.getElementById('c'), ctx = canvas.getContext('2d'), vp = document.getElementById('vp');
 
     function saveHistory() {
         history.push(JSON.stringify(gridData));
-        if (history.length > 20) history.shift();
+        if (history.length > 30) history.shift();
         redoStack = [];
     }
-
-    function undo() {
-        if (history.length > 0) {
-            redoStack.push(JSON.stringify(gridData));
-            gridData = JSON.parse(history.pop());
-            draw();
-        }
-    }
-
-    function redo() {
-        if (redoStack.length > 0) {
-            history.push(JSON.stringify(gridData));
-            gridData = JSON.parse(redoStack.pop());
-            draw();
-        }
-    }
+    function undo() { if (history.length > 0) { redoStack.push(JSON.stringify(gridData)); gridData = JSON.parse(history.pop()); draw(); } }
+    function redo() { if (redoStack.length > 0) { history.push(JSON.stringify(gridData)); gridData = JSON.parse(redoStack.pop()); draw(); } }
 
     function initGrid() {
         COLS = parseInt(document.getElementById('cols').value);
@@ -114,89 +84,75 @@ html_code = """
         canvas.width = (COLS * SIZE) + OFFSET;
         canvas.height = (ROWS * SIZE) + OFFSET;
         gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
-        history = [];
         draw();
     }
 
     function draw() {
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.setTransform(1,0,0,1,0,0);
         ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        ctx.font = "10px Arial";
-        ctx.fillStyle = "#7f8c8d";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.font = "10px Arial"; ctx.fillStyle = "#7f8c8d"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
 
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
-                const x = c * SIZE + OFFSET;
-                const y = r * SIZE + OFFSET;
+                const x = c * SIZE + OFFSET, y = r * SIZE + OFFSET;
                 if (r === 0 && (c + 1) % 5 === 0) ctx.fillText(c + 1, x + SIZE/2, OFFSET/2);
                 if (c === 0 && (r + 1) % 5 === 0) ctx.fillText(r + 1, OFFSET/2, y + SIZE/2);
-
-                ctx.beginPath();
                 ctx.strokeStyle = ((r+1)%5===0 || (c+1)%5===0) ? "#bdc3c7" : "#ecf0f1";
                 ctx.lineWidth = ((r+1)%5===0 || (c+1)%5===0) ? 1.5 : 1;
                 ctx.strokeRect(x, y, SIZE, SIZE);
-                
                 const val = gridData[r][c];
-                if (val === 'fill') {
-                    ctx.fillStyle = "black";
-                    ctx.fillRect(x + 1, y + 1, SIZE - 2, SIZE - 2);
-                } else if (val === 'X' || val === 'O') {
-                    ctx.fillStyle = "black";
-                    ctx.font = `bold ${SIZE * 0.6}px Arial`;
-                    ctx.fillText(val, x + SIZE/2, y + SIZE/2);
-                    ctx.font = "10px Arial";
-                }
-                ctx.fillStyle = "#7f8c8d";
+                if (val === 'fill') { ctx.fillStyle = "black"; ctx.fillRect(x+1, y+1, SIZE-2, SIZE-2); }
+                else if (val) { ctx.fillStyle = "black"; ctx.font = `bold ${SIZE*0.6}px Arial`; ctx.fillText(val, x+SIZE/2, y+SIZE/2); ctx.font = "10px Arial"; }
             }
         }
     }
 
-    // --- PINCH ZOOM & PAN LOGIK ---
-    let initialPinchDist = null;
-    let lastX, lastY;
+    // --- NY FORBEDRET TOUCH/MUS LOGIK ---
+    let isDown = false, evCache = [], prevDiff = -1;
 
-    vp.addEventListener('touchstart', e => {
-        if (e.touches.length === 2) {
-            initialPinchDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-        } else {
-            lastX = e.touches[0].clientX;
-            lastY = e.touches[0].clientY;
-            if (!isPan) handleInput(e);
+    canvas.addEventListener('pointerdown', e => {
+        if (isPan) { isDown = true; return; }
+        if (e.pointerType === 'touch') evCache.push(e);
+        handleAction(e);
+    });
+
+    window.addEventListener('pointerup', e => {
+        isDown = false;
+        evCache = evCache.filter(ev => ev.pointerId !== e.pointerId);
+        if (evCache.length < 2) prevDiff = -1;
+    });
+
+    canvas.addEventListener('pointermove', e => {
+        if (isPan && isDown) {
+            vp.scrollLeft -= e.movementX;
+            vp.scrollTop -= e.movementY;
+            return;
         }
-    }, {passive: false});
-
-    vp.addEventListener('touchmove', e => {
-        e.preventDefault();
-        if (e.touches.length === 2 && initialPinchDist) {
-            let dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-            let zoom = dist / initialPinchDist;
-            scale = Math.min(Math.max(0.2, scale * zoom), 5);
-            canvas.style.transform = `scale(${scale})`;
-            initialPinchDist = dist;
-        } else if (isPan) {
-            vp.scrollLeft -= (e.touches[0].clientX - lastX);
-            vp.scrollTop -= (e.touches[0].clientY - lastY);
-            lastX = e.touches[0].clientX;
-            lastY = e.touches[0].clientY;
+        
+        // Pinch Zoom håndtering
+        if (e.pointerType === 'touch') {
+            const index = evCache.findIndex(ev => ev.pointerId === e.pointerId);
+            evCache[index] = e;
+            if (evCache.length === 2) {
+                const curDiff = Math.hypot(evCache[0].clientX - evCache[1].clientX, evCache[0].clientY - evCache[1].clientY);
+                if (prevDiff > 0) {
+                    let zoom = curDiff / prevDiff;
+                    scale = Math.min(Math.max(0.3, scale * zoom), 4);
+                    canvas.style.transform = `scale(${scale})`;
+                }
+                prevDiff = curDiff;
+            }
         }
-    }, {passive: false});
+    });
 
-    function handleInput(e) {
-        if (isPan) return;
+    function handleAction(e) {
+        if (evCache.length >= 2) return; // Ingen tegning ved zoom
         const rect = canvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        
-        const c = Math.floor((clientX - rect.left) / (SIZE * scale));
-        const r = Math.floor((clientY - rect.top) / (SIZE * scale));
-        
-        const realC = c; // justeret for OFFSET hvis nødvendigt, men rect.left tager højde for det
-        const gridC = Math.floor((clientX - rect.left - (OFFSET * scale)) / (SIZE * scale));
-        const gridR = Math.floor((clientY - rect.top - (OFFSET * scale)) / (SIZE * scale));
+        const x = (e.clientX - rect.left) / scale;
+        const y = (e.clientY - rect.top) / scale;
+        const gridC = Math.floor((x - OFFSET) / SIZE);
+        const gridR = Math.floor((y - OFFSET) / SIZE);
 
         if (gridR >= 0 && gridR < ROWS && gridC >= 0 && gridC < COLS) {
             saveHistory();
@@ -208,22 +164,19 @@ html_code = """
         }
     }
 
-    canvas.addEventListener('mousedown', handleInput);
-
     function togglePan() {
         isPan = !isPan;
         document.getElementById('panBtn').classList.toggle('active-tool');
-        canvas.style.cursor = isPan ? "grab" : "crosshair";
     }
 
     function exportData(type) {
         const url = canvas.toDataURL("image/png");
         if(type === 'png') {
             const a = document.createElement('a');
-            a.download = "moenster.png"; a.href = url; a.click();
+            a.download = "design.png"; a.href = url; a.click();
         } else {
             const w = window.open();
-            w.document.write(`<html><body style="margin:0; display:flex; justify-content:center;"><img src="${url}" style="max-width:95%; height:auto;" onload="window.print();"></body></html>`);
+            w.document.write(`<html><body style="margin:0;display:flex;justify-content:center;"><img src="${url}" style="max-width:95%;height:auto;" onload="window.print();"></body></html>`);
         }
     }
 
