@@ -1,27 +1,38 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import numpy as np
+from PIL import Image
+import base64
+import json
 
 st.set_page_config(
-    page_title="Grid Designer",
+    page_title="Grid Designer Pro",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
 # ---------- SIDEBAR ----------
 with st.sidebar:
-    st.header("Indstillinger")
-
-    # Opdateret til dine ønskede værdier (>100)
-    cols = st.number_input("Kolonner", min_value=5, max_value=400, value=120)
-    rows = st.number_input("Rækker", min_value=5, max_value=400, value=120)
+    st.header("⚙️ Indstillinger")
+    cols = st.number_input("Kolonner", 5, 400, 120)
+    rows = st.number_input("Rækker", 5, 400, 120)
     cell_size = st.slider("Zoom (feltstørrelse)", 5, 60, 20)
 
     st.divider()
-    st.write("Klik udenfor panelet for at lukke")
+    st.header("📥 Import")
+    uploaded_file = st.file_uploader("Konverter billede til net", type=["png", "jpg", "jpeg"])
+    
+    import_data = []
+    if uploaded_file:
+        # Behandl billede med PIL
+        img = Image.open(uploaded_file).convert("L").resize((cols, rows), Image.NEAREST)
+        # Find alle mørke pixels og lav en liste over deres index
+        arr = np.array(img)
+        import_data = np.where(arr.flatten() < 128)[0].tolist()
+        st.success(f"Billede klar! {len(import_data)} felter fundet.")
 
-# ---------- HTML ----------
-html = """
+# ---------- HTML & JAVASCRIPT ----------
+html_template = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -30,96 +41,72 @@ html = """
 
 <style>
 body {
-    margin: 0;
-    padding: 0;
-    background: #f2f2f2;
-    font-family: -apple-system, Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
+    margin: 0; padding: 0;
+    background: #e5e5e5;
+    font-family: -apple-system, sans-serif;
+    display: flex; flex-direction: column;
+    height: 100vh; overflow: hidden;
 }
 
 .toolbar {
-    position: sticky;
-    top: 0;
-    background: white;
-    padding: 10px;
-    border-bottom: 1px solid #ddd;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    z-index: 1000;
-    justify-content: center;
+    position: sticky; top: 0;
+    background: white; padding: 10px;
+    border-bottom: 1px solid #ccc;
+    display: flex; flex-wrap: wrap; gap: 8px;
+    z-index: 1001; justify-content: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 
-button, select {
-    padding: 10px 14px;
-    border-radius: 8px;
-    border: 1px solid #ccc;
-    background: white;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-}
-
-button.primary { background: #007aff; color: white; border: none; }
-button.active-tool { background: #5856d6; color: white; }
-
-/* Container der tillader scroll i begge retninger */
 .grid-wrap {
-    flex: 1;
-    overflow: auto;
+    flex: 1; overflow: auto;
+    padding: 40px; display: flex;
+    justify-content: center; align-items: flex-start;
     -webkit-overflow-scrolling: touch;
-    padding: 20px;
-    background: #e5e5e5;
 }
 
 .grid {
     display: grid;
-    background: #bbb;
-    gap: 1px;
+    gap: 1px; 
+    background-color: #999 !important;
+    border: 1px solid #666;
     width: fit-content;
-    margin: 0 auto;
     background-color: white;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
 }
 
 .cell {
-    background: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    user-select: none;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    background-color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: bold; user-select: none; cursor: pointer;
+    min-width: var(--sz); min-height: var(--sz);
 }
 
-.cell.active {
-    background: black !important;
-    color: white !important;
+.cell.active { background-color: black !important; color: white !important; }
+
+button, select {
+    padding: 10px 14px; border-radius: 8px;
+    border: 1px solid #ccc; background: white;
+    font-size: 14px; font-weight: 600;
 }
 
-/* Panorerings-tilstand */
-.pan-mode .cell {
-    cursor: grab;
-    pointer-events: none; /* Deaktiverer klik-logik når vi panorerer */
-}
+.primary { background: #007aff !important; color: white !important; border: none; }
+.btn-active { background: #5856d6 !important; color: white !important; }
 
-.grid-wrap.pan-active {
-    cursor: grab;
+#loading {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: white; display: flex; justify-content: center;
+    align-items: center; z-index: 2000; font-weight: bold;
 }
 
 @media print {
     .toolbar { display: none !important; }
-    .grid-wrap { overflow: visible; padding: 0; background: white; }
-    body { background: white; }
-    .cell { border: 0.1pt solid #eee; -webkit-print-color-adjust: exact; }
+    .grid-wrap { overflow: visible; padding: 0; }
+    .cell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 </style>
 </head>
-
 <body>
+
+<div id="loading">Bygger mønster...</div>
 
 <div class="toolbar">
     <select id="mode">
@@ -128,7 +115,6 @@ button.active-tool { background: #5856d6; color: white; }
         <option value="O">⭕ O</option>
         <option value="erase">⚪ Slet</option>
     </select>
-
     <button id="panBtn" onclick="togglePan()">✋ Panorer</button>
     <button class="primary" onclick="exportPNG()">💾 Gem PNG</button>
     <button onclick="window.print()">🖨️ PDF</button>
@@ -140,80 +126,93 @@ button.active-tool { background: #5856d6; color: white; }
 </div>
 
 <script>
-const COLS = """ + str(cols) + """;
-const ROWS = """ + str(rows) + """;
-const SIZE = """ + str(cell_size) + """;
+const COLS = __COLS__;
+const ROWS = __ROWS__;
+const SIZE = __SIZE__;
+const IMPORT_DATA = __IMPORT_DATA__; // Liste over index-numre der skal være sorte
 
 let isPanMode = false;
 const grid = document.getElementById("grid");
-const view = document.getElementById("view");
 
-grid.style.gridTemplateColumns = "repeat(" + COLS + ", " + SIZE + "px)";
+grid.style.setProperty('--sz', SIZE + "px");
+grid.style.gridTemplateColumns = `repeat(${COLS}, ${SIZE}px)`;
 
-// Generer celler
-for (let i = 0; i < ROWS * COLS; i++) {
-    const cell = document.createElement("div");
-    cell.className = "cell";
-    cell.style.width = SIZE + "px";
-    cell.style.height = SIZE + "px";
-    cell.style.fontSize = (SIZE * 0.6) + "px";
+function generateGrid() {
+    const fragment = document.createDocumentFragment();
+    const total = ROWS * COLS;
+    const importSet = new Set(IMPORT_DATA);
 
-    cell.onclick = function () {
-        if (isPanMode) return;
-        const mode = document.getElementById("mode").value;
+    for (let i = 0; i < total; i++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.style.width = SIZE + "px";
+        cell.style.height = SIZE + "px";
+        cell.style.fontSize = (SIZE * 0.7) + "px";
 
-        if (mode === "fill") {
-            cell.textContent = "";
-            cell.classList.toggle("active");
-        } else if (mode === "erase") {
-            cell.textContent = "";
-            cell.classList.remove("active");
-        } else {
-            cell.classList.remove("active");
-            cell.textContent = cell.textContent === mode ? "" : mode;
+        if (importSet.has(i)) {
+            cell.classList.add("active");
         }
-    };
 
-    grid.appendChild(cell);
+        cell.onclick = function () {
+            if (isPanMode) return;
+            const mode = document.getElementById("mode").value;
+            if (mode === "fill") {
+                cell.textContent = "";
+                cell.classList.toggle("active");
+            } else if (mode === "erase") {
+                cell.textContent = "";
+                cell.classList.remove("active");
+            } else {
+                cell.classList.remove("active");
+                cell.textContent = cell.textContent === mode ? "" : mode;
+            }
+        };
+        fragment.appendChild(cell);
+    }
+    grid.appendChild(fragment);
+    document.getElementById("loading").style.display = "none";
 }
+
+setTimeout(generateGrid, 50);
 
 function togglePan() {
     isPanMode = !isPanMode;
-    document.getElementById("panBtn").classList.toggle("active-tool");
-    grid.classList.toggle("pan-mode");
-    view.classList.toggle("pan-active");
-    // Ved pan-mode tillader vi naturlig touch-scroll på mobilen
-    view.style.touchAction = isPanMode ? "auto" : "none";
+    document.getElementById("panBtn").classList.toggle("btn-active");
+    document.getElementById("view").style.touchAction = isPanMode ? "auto" : "none";
 }
 
 function clearGrid() {
-    if (!confirm("Vil du slette alt?")) return;
-    document.querySelectorAll(".cell").forEach(c => {
-        c.textContent = "";
-        c.classList.remove("active");
-    });
+    if (confirm("Ryd alt?")) {
+        document.querySelectorAll(".cell").forEach(c => {
+            c.textContent = "";
+            c.classList.remove("active");
+        });
+    }
 }
 
 function exportPNG() {
     const btn = event.target;
+    const oldText = btn.textContent;
     btn.textContent = "Vent...";
-    html2canvas(grid, {
-        backgroundColor: "#ffffff",
-        scale: 2
-    }).then(canvas => {
+    html2canvas(grid, { backgroundColor: "#ffffff", scale: 1 }).then(canvas => {
         const link = document.createElement("a");
-        link.download = "design-grid.png";
-        link.href = canvas.toDataURL("image/png");
+        link.download = "moenster.png";
+        link.href = canvas.toDataURL();
         link.click();
-        btn.textContent = "💾 Gem PNG";
+        btn.textContent = oldText;
     });
 }
 </script>
-
 </body>
 </html>
 """
 
-components.html(html, height=1000, scrolling=False)
+# Indsæt værdier i HTML
+final_html = (html_template
+    .replace("__COLS__", str(cols))
+    .replace("__ROWS__", str(rows))
+    .replace("__SIZE__", str(cell_size))
+    .replace("__IMPORT_DATA__", json.dumps(import_data))
+)
 
-st.caption("Grid Designer Pro – Optimeret til mobil navigation og eksport")
+components.html(final_html, height=1000, scrolling=False)
