@@ -33,7 +33,7 @@ html_template = """
         body { margin: 0; font-family: sans-serif; background: #ddd; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         .toolbar { background: #fff; padding: 10px; display: flex; gap: 8px; justify-content: center; border-bottom: 2px solid #bbb; z-index: 10; flex-wrap: wrap; }
         .viewport { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 20px; -webkit-overflow-scrolling: touch; }
-        canvas { background: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.2); cursor: crosshair; touch-action: none; }
+        canvas { background: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.2); cursor: crosshair; }
         button, select { padding: 10px 15px; border-radius: 8px; border: 1px solid #ccc; font-weight: bold; cursor: pointer; }
         .btn-blue { background: #007aff; color: white; border: none; }
     </style>
@@ -46,8 +46,8 @@ html_template = """
             <option value="O">⭕ O</option>
             <option value="erase">⚪ Ryd</option>
         </select>
-        <button class="btn-blue" onclick="exportWithMargin('png')">📸 Gem Billede</button>
-        <button class="btn-blue" style="background:#34c759" onclick="exportWithMargin('pdf')">🖨️ Gem som PDF</button>
+        <button class="btn-blue" onclick="downloadImage()">📸 Gem Billede</button>
+        <button class="btn-blue" style="background:#34c759" onclick="printCanvas()">🖨️ Gem som PDF</button>
         <button onclick="clearCanvas()">🗑️ Ryd alt</button>
     </div>
 
@@ -60,16 +60,18 @@ html_template = """
     const ROWS = __ROWS__;
     const SIZE = __SIZE__;
     const IMPORT_DATA = __IMPORT_DATA__;
-    const MARGIN = 60; // Margen i pixels for at undgå telefon-overlap
 
     const canvas = document.getElementById('gridCanvas');
     const ctx = canvas.getContext('2d');
     
+    // Data storage
     let gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
 
+    // Setup canvas size
     canvas.width = COLS * SIZE;
     canvas.height = ROWS * SIZE;
 
+    // Load Import Data
     if (IMPORT_DATA.length > 0) {
         IMPORT_DATA.forEach(idx => {
             const r = Math.floor(idx / COLS);
@@ -78,33 +80,28 @@ html_template = """
         });
     }
 
-    function draw(targetCtx, scale = 1, withMargin = false) {
-        const sSize = SIZE * scale;
-        const offset = withMargin ? MARGIN : 0;
-        
-        // Hvid baggrund
-        targetCtx.fillStyle = "#ffffff";
-        targetCtx.fillRect(0, 0, targetCtx.canvas.width, targetCtx.canvas.height);
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
-                const x = c * sSize + offset;
-                const y = r * sSize + offset;
+                const x = c * SIZE;
+                const y = r * SIZE;
                 
+                // Draw Cell Background
                 if (gridData[r][c] === 'fill') {
-                    targetCtx.fillStyle = '#000';
-                    targetCtx.fillRect(x, y, sSize, sSize);
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(x, y, SIZE, SIZE);
                 } else {
-                    targetCtx.strokeStyle = '#ccc';
-                    targetCtx.lineWidth = 1 * scale;
-                    targetCtx.strokeRect(x, y, sSize, sSize);
+                    ctx.strokeStyle = '#ccc';
+                    ctx.strokeRect(x, y, SIZE, SIZE);
                     
                     if (gridData[r][c] === 'X' || gridData[r][c] === 'O') {
-                        targetCtx.fillStyle = '#000';
-                        targetCtx.font = `bold ${sSize * 0.7}px Arial`;
-                        targetCtx.textAlign = "center";
-                        targetCtx.textBaseline = "middle";
-                        targetCtx.fillText(gridData[r][c], x + sSize/2, y + sSize/2);
+                        ctx.fillStyle = '#000';
+                        ctx.font = `bold ${SIZE * 0.7}px Arial`;
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText(gridData[r][c], x + SIZE/2, y + SIZE/2);
                     }
                 }
             }
@@ -123,44 +120,33 @@ html_template = """
         else if (mode === 'fill') gridData[r][c] = (gridData[r][c] === 'fill') ? null : 'fill';
         else gridData[r][c] = (gridData[r][c] === mode) ? null : mode;
         
-        draw(ctx);
+        draw();
     });
 
-    function exportWithMargin(type) {
-        // Skab et usynligt canvas i høj opløsning (High DPI)
-        const exportCanvas = document.createElement('canvas');
-        const exportCtx = exportCanvas.getContext('2d');
-        const scale = 4; // 4x opløsning for super skarpe pixels
-        
-        exportCanvas.width = (COLS * SIZE * scale) + (MARGIN * 2);
-        exportCanvas.height = (ROWS * SIZE * scale) + (MARGIN * 2);
-        
-        draw(exportCtx, scale, true);
-        
-        const dataUrl = exportCanvas.toDataURL("image/png");
+    function downloadImage() {
+        const link = document.createElement('a');
+        link.download = 'moenster.png';
+        link.href = canvas.toDataURL();
+        link.click();
+    }
 
-        if (type === 'png') {
-            const link = document.createElement('a');
-            link.download = 'skarp-moenster.png';
-            link.href = dataUrl;
-            link.click();
-        } else {
-            const win = window.open('', '_blank');
-            win.document.write('<html><body style="margin:0; background:#fff; display:flex; justify-content:center;">');
-            win.document.write('<img src="' + dataUrl + '" style="width:100%; height:auto;" onload="window.print();window.close();">');
-            win.document.write('</body></html>');
-            win.document.close();
-        }
+    function printCanvas() {
+        const dataUrl = canvas.toDataURL();
+        const win = window.open('', '_blank');
+        win.document.write('<html><body style="margin:0; display:flex; justify-content:center;">');
+        win.document.write('<img src="' + dataUrl + '" style="width:100%; height:auto;" onload="window.print();window.close();">');
+        win.document.write('</body></html>');
+        win.document.close();
     }
 
     function clearCanvas() {
         if(confirm("Ryd alt?")) {
             gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
-            draw(ctx);
+            draw();
         }
     }
 
-    draw(ctx);
+    draw();
     </script>
 </body>
 </html>
