@@ -19,15 +19,14 @@ with st.sidebar:
 
     st.divider()
     st.header("📥 Import")
-    uploaded_file = st.file_uploader("Konverter billede til net", type=["png", "jpg", "jpeg"])
+    uploaded_file = st.file_uploader("Konverter billede", type=["png", "jpg", "jpeg"])
     
     import_data = []
     if uploaded_file:
         img = Image.open(uploaded_file).convert("L").resize((cols, rows), Image.NEAREST)
         arr = np.array(img)
-        # Find index for mørke pixels (< 128)
         import_data = np.where(arr.flatten() < 128)[0].tolist()
-        st.success(f"Billede klar til indlæsning!")
+        st.success("Billede klar!")
 
 # ---------- HTML & JAVASCRIPT ----------
 html_template = """
@@ -46,6 +45,7 @@ body {
     height: 100vh; overflow: hidden;
 }
 
+/* UI ELEMENTER */
 .toolbar {
     position: sticky; top: 0;
     background: white; padding: 10px;
@@ -56,17 +56,17 @@ body {
 
 .grid-wrap {
     flex: 1; overflow: auto;
-    padding: 30px; display: flex;
+    padding: 20px; display: flex;
     justify-content: center; align-items: flex-start;
     -webkit-overflow-scrolling: touch;
 }
 
-/* GITTER SETUP */
+/* SELVE GRIDSET */
 .grid {
     display: grid;
     gap: 1px; 
-    background-color: #999 !important; /* Gitter linje farve */
-    border: 1px solid #333;
+    background-color: #000 !important; /* Gitterlinjer */
+    border: 1px solid #000;
     width: fit-content;
     background-color: white;
 }
@@ -74,7 +74,7 @@ body {
 .cell {
     background-color: white;
     display: flex; align-items: center; justify-content: center;
-    font-weight: bold; user-select: none; cursor: pointer;
+    font-weight: bold; user-select: none;
     min-width: var(--sz); min-height: var(--sz);
 }
 
@@ -87,33 +87,41 @@ button, select {
 }
 
 .btn-png { background: #007aff; color: white; border: none; }
-.btn-svg { background: #34c759; color: white; border: none; }
 .btn-active { background: #5856d6 !important; color: white !important; }
+
+/* PRINT REGLER - DETTE ER NØGLEN TIL DIT ØNSKE */
+@media print {
+    /* Skjul alt undtagen grid-beholderen */
+    body * { visibility: hidden; }
+    #grid, #grid * { visibility: visible; }
+    
+    /* Positionér gridet øverst til venstre på papiret */
+    #grid {
+        position: absolute;
+        left: 0;
+        top: 0;
+        border: 1px solid black !important;
+        gap: 0 !important; /* Fjern gap for pænere print linjer */
+    }
+    
+    .cell {
+        border: 0.1pt solid black !important; /* Tvinger gitteret frem på PDF */
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    
+    .grid-wrap { padding: 0; overflow: visible; display: block; }
+}
 
 #loading {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: white; display: flex; flex-direction: column;
-    justify-content: center; align-items: center; z-index: 2000;
-}
-
-@media print {
-    .toolbar { display: none !important; }
-    .grid-wrap { overflow: visible; padding: 0; }
-    .grid { gap: 0; border: 1px solid black; }
-    .cell { 
-        border: 0.1pt solid black !important;
-        -webkit-print-color-adjust: exact; 
-        print-color-adjust: exact; 
-    }
+    background: white; display: flex; justify-content: center; align-items: center; z-index: 2000;
 }
 </style>
 </head>
 <body>
 
-<div id="loading">
-    <div>Bygger gitter...</div>
-    <div style="font-size: 12px; color: #666; margin-top: 10px;">Dette kan tage et øjeblik ved store mønstre</div>
-</div>
+<div id="loading">Indlæser mønster...</div>
 
 <div class="toolbar">
     <select id="mode">
@@ -123,9 +131,9 @@ button, select {
         <option value="erase">⚪ Slet</option>
     </select>
     <button id="panBtn" onclick="togglePan()">✋ Panorer</button>
-    <button class="btn-png" onclick="exportPNG()">📸 Gem PNG</button>
-    <button class="btn-svg" onclick="exportSVG()">📐 SVG</button>
-    <button onclick="window.print()">🖨️ PDF</button>
+    <button class="btn-png" onclick="exportPNG()">📸 Gem i Kamerarulle</button>
+    <button class="btn-png" style="background:#34c759" onclick="exportSVG()">📐 Gem SVG</button>
+    <button onclick="window.print()">🖨️ PDF / Print</button>
     <button onclick="clearGrid()">🗑️ Ryd</button>
 </div>
 
@@ -145,13 +153,11 @@ const grid = document.getElementById("grid");
 grid.style.setProperty('--sz', SIZE + "px");
 grid.style.gridTemplateColumns = `repeat(${COLS}, ${SIZE}px)`;
 
-// Effektiv generering af celler
 function generateGrid() {
     const fragment = document.createDocumentFragment();
     const importSet = new Set(IMPORT_DATA);
-    const total = ROWS * COLS;
 
-    for (let i = 0; i < total; i++) {
+    for (let i = 0; i < ROWS * COLS; i++) {
         const cell = document.createElement("div");
         cell.className = "cell";
         cell.style.width = SIZE + "px";
@@ -180,18 +186,16 @@ function generateGrid() {
     document.getElementById("loading").style.display = "none";
 }
 
-// Start process
 setTimeout(generateGrid, 50);
 
 function togglePan() {
     isPanMode = !isPanMode;
     document.getElementById("panBtn").classList.toggle("btn-active");
-    // Ved panorerings-tilstand tillader vi touch-navigation
     document.getElementById("view").style.touchAction = isPanMode ? "auto" : "none";
 }
 
 function clearGrid() {
-    if (confirm("Vil du rydde hele pladen?")) {
+    if (confirm("Ryd alt?")) {
         document.querySelectorAll(".cell").forEach(c => {
             c.textContent = "";
             c.classList.remove("active");
@@ -199,34 +203,38 @@ function clearGrid() {
     }
 }
 
+// PNG EKSPORT TIL KAMERARULLE
 function exportPNG() {
-    html2canvas(grid, { backgroundColor: "#ffffff", scale: 2 }).then(canvas => {
+    const btn = event.target;
+    btn.textContent = "Vent...";
+    html2canvas(grid, { 
+        backgroundColor: "#ffffff", 
+        scale: 2,
+        logging: false 
+    }).then(canvas => {
         const link = document.createElement("a");
-        link.download = "moenster-grid.png";
+        link.download = "mit-moenster.png";
         link.href = canvas.toDataURL("image/png");
         link.click();
+        btn.textContent = "📸 Gem i Kamerarulle";
     });
 }
 
+// SVG EKSPORT
 function exportSVG() {
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${COLS * SIZE}" height="${ROWS * SIZE}">`;
     svg += `<rect width="100%" height="100%" fill="white"/>`;
     const cells = document.querySelectorAll('.cell');
     cells.forEach((cell, i) => {
-        if (cell.classList.contains('active') || cell.textContent) {
-            const x = (i % COLS) * SIZE;
-            const y = Math.floor(i / COLS) * SIZE;
-            if (cell.classList.contains('active')) {
-                svg += `<rect x="${x}" y="${y}" width="${SIZE}" height="${SIZE}" fill="black"/>`;
-            } else {
-                svg += `<text x="${x + SIZE/2}" y="${y + SIZE/2 + SIZE*0.25}" font-family="Arial" font-size="${SIZE*0.7}" text-anchor="middle">${cell.textContent}</text>`;
-            }
+        const x = (i % COLS) * SIZE;
+        const y = Math.floor(i / COLS) * SIZE;
+        if (cell.classList.contains('active')) {
+            svg += `<rect x="${x}" y="${y}" width="${SIZE}" height="${SIZE}" fill="black"/>`;
+        } else if (cell.textContent) {
+            svg += `<text x="${x + SIZE/2}" y="${y + SIZE/2 + SIZE*0.25}" font-family="Arial" font-size="${SIZE*0.7}" text-anchor="middle">${cell.textContent}</text>`;
         }
+        svg += `<rect x="${x}" y="${y}" width="${SIZE}" height="${SIZE}" fill="none" stroke="#ccc" stroke-width="0.5"/>`;
     });
-    // Gitterlinjer i SVG
-    for(let i=0; i<=COLS; i++) svg += `<line x1="${i*SIZE}" y1="0" x2="${i*SIZE}" y2="${ROWS*SIZE}" stroke="#ccc" stroke-width="0.5"/>`;
-    for(let i=0; i<=ROWS; i++) svg += `<line x1="0" y1="${i*SIZE}" x2="${COLS*SIZE}" y2="${i*SIZE}" stroke="#ccc" stroke-width="0.5"/>`;
-    
     svg += "</svg>";
     const blob = new Blob([svg], {type: 'image/svg+xml'});
     const url = URL.createObjectURL(blob);
@@ -240,7 +248,6 @@ function exportSVG() {
 </html>
 """
 
-# Indsæt alle data sikkert
 final_html = (html_template
     .replace("__COLS__", str(cols))
     .replace("__ROWS__", str(rows))
