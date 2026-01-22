@@ -10,11 +10,14 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Skjul Streamlit UI
+st.markdown("<style>header, footer, .stDeployButton {display:none !important;} [data-testid='stHeader'] {display:none !important;}</style>", unsafe_allow_html=True)
+
 # ---------- SIDEBAR ----------
 with st.sidebar:
     st.header("Indstillinger")
-    cols = st.number_input("Kolonner", min_value=120, max_value=400, value=120)
-    rows = st.number_input("Rækker", min_value=120, max_value=400, value=120)
+    cols = st.number_input("Kolonner", min_value=5, max_value=400, value=120)
+    rows = st.number_input("Rækker", min_value=5, max_value=400, value=120)
     cell_size = st.slider("Zoom (feltstørrelse)", 5, 60, 20)
 
     st.divider()
@@ -24,54 +27,55 @@ with st.sidebar:
     if uploaded:
         img = Image.open(uploaded).convert("L").resize((cols, rows), Image.NEAREST)
         arr = np.array(img)
-        # Sørg for at kun aktive celler bliver gemt
-        import_data = np.argwhere(arr < 128).flatten().tolist()
+        import_data = np.where(arr.flatten() < 128)[0].tolist()
 
-    st.write("Klik udenfor panelet for at lukke")
-
-# ---------- HTML ----------
-html = """
+# ---------- HTML & JAVASCRIPT ----------
+html_code = """
 <!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-
 <style>
-body { margin: 0; background: #f2f2f2; font-family: -apple-system, Arial, sans-serif; display:flex; flex-direction:column; height:100vh;}
-.toolbar { position: sticky; top: 0; background:white; padding:10px; border-bottom:1px solid #ddd; display:flex; flex-wrap:wrap; gap:8px; z-index:1000; justify-content:center; }
-button, select { padding:10px 14px; border-radius:8px; border:1px solid #ccc; background:white; cursor:pointer; font-weight:600; }
-button.primary { background:#007aff; color:white; border:none; }
-button.active-tool { background:#5856d6; color:white; }
-.grid-wrap { flex:1; overflow:auto; -webkit-overflow-scrolling: touch; padding:20px; background:#e5e5e5; }
-.grid { display:grid; gap:1px; width:fit-content; margin:0 auto; background:white; box-shadow:0 0 10px rgba(0,0,0,0.1);}
-.cell { background:white; display:flex; align-items:center; justify-content:center; font-weight:bold; user-select:none; -webkit-print-color-adjust:exact; }
-.cell.active { background:black; color:white; }
-.pan-mode .cell { pointer-events:none; cursor:grab; }
-.grid-wrap.pan-active { cursor:grab; }
+body { margin: 0; background: #f2f2f2; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
+.toolbar { position: sticky; top: 0; background: white; padding: 10px; border-bottom: 1px solid #ddd; display: flex; flex-wrap: wrap; gap: 8px; z-index: 1000; justify-content: center; }
+button, select { padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; background: white; cursor: pointer; font-weight: 600; }
+button.primary { background: #007aff; color: white; border: none; }
+button.active-tool { background: #5856d6 !important; color: white !important; }
+.grid-wrap { flex: 1; overflow: auto; padding: 40px; background: #e5e5e5; display: flex; justify-content: center; }
+.grid { display: grid; gap: 1px; background: #bbb; border: 1px solid #999; width: fit-content; }
+.cell { background: white; width: var(--sz); height: var(--sz); display: flex; align-items: center; justify-content: center; font-weight: bold; user-select: none; }
+.cell.active { background: black !important; }
+.pan-active .cell { pointer-events: none; }
+.pan-active { cursor: grab; }
 
-@media print { .toolbar{display:none !important;} .grid-wrap{overflow:visible; padding:0; background:white;} body{background:white;} .cell{border:0.1pt solid #eee;} }
+/* Print regler er nu simplificeret til kun at vise det genererede billede */
+@media print {
+    body * { visibility: hidden; }
+    #print-image, #print-image * { visibility: visible; }
+    #print-image { position: absolute; left: 0; top: 0; width: 100%; }
+}
 </style>
 </head>
-
 <body>
 
 <div class="toolbar">
     <select id="mode">
-        <option value="fill">Fyld</option>
-        <option value="X">X</option>
-        <option value="O">O</option>
+        <option value="fill">Sort Felt</option>
+        <option value="X">Symbol X</option>
+        <option value="O">Symbol O</option>
         <option value="erase">Slet</option>
     </select>
-    <button id="panBtn" onclick="togglePan()">Panorer</button>
-    <button class="primary" onclick="exportPNG()">Gem PNG</button>
-    <button onclick="exportPDF()">PDF</button>
-    <button onclick="clearGrid()">Ryd</button>
+    <button id="panBtn" onclick="togglePan()">✋ Panorer</button>
+    <button class="primary" onclick="generateAndExport('png')">📸 Gem Billede</button>
+    <button class="primary" style="background:#34c759" onclick="generateAndExport('pdf')">🖨️ PDF / Print</button>
+    <button onclick="clearGrid()">🗑️ Ryd</button>
 </div>
 
 <div class="grid-wrap" id="view">
     <div id="grid" class="grid"></div>
 </div>
+
+<img id="print-image" style="display:none;">
 
 <script>
 const COLS = __COLS__;
@@ -83,92 +87,125 @@ let isPan = false;
 const grid = document.getElementById("grid");
 const view = document.getElementById("view");
 
-grid.style.gridTemplateColumns = "repeat(" + COLS + ", " + SIZE + "px)";
+grid.style.setProperty('--sz', SIZE + "px");
+grid.style.gridTemplateColumns = `repeat(${COLS}, ${SIZE}px)`;
 
-// Generer celler
-for(let i=0;i<ROWS*COLS;i++){
+const fragment = document.createDocumentFragment();
+for (let i = 0; i < ROWS * COLS; i++) {
     const cell = document.createElement("div");
     cell.className = "cell";
-    cell.style.width = SIZE+"px";
-    cell.style.height = SIZE+"px";
-    cell.style.fontSize = (SIZE*0.6)+"px";
-
-    cell.onclick = function(){
-        if(isPan) return;
+    cell.style.fontSize = (SIZE * 0.7) + "px";
+    cell.onclick = function() {
+        if (isPan) return;
         const mode = document.getElementById("mode").value;
-        if(mode==="fill"){ cell.textContent=""; cell.classList.toggle("active"); }
-        else if(mode==="erase"){ cell.textContent=""; cell.classList.remove("active"); }
-        else{ cell.classList.remove("active"); cell.textContent=cell.textContent===mode?"":mode; }
+        if (mode === "fill") {
+            cell.textContent = "";
+            cell.classList.toggle("active");
+        } else if (mode === "erase") {
+            cell.textContent = "";
+            cell.classList.remove("active");
+        } else {
+            cell.classList.remove("active");
+            cell.textContent = (cell.textContent === mode) ? "" : mode;
+        }
     };
-    grid.appendChild(cell);
+    fragment.appendChild(cell);
 }
+grid.appendChild(fragment);
 
-// Import billede
 IMPORT.forEach(idx => {
-    const c = idx % COLS;
-    const r = Math.floor(idx / COLS);
-    const cell = grid.children[r*COLS + c];
-    if(cell) cell.classList.add("active");
+    if(grid.children[idx]) grid.children[idx].classList.add("active");
 });
 
-function togglePan(){
+function togglePan() {
     isPan = !isPan;
     document.getElementById("panBtn").classList.toggle("active-tool");
-    grid.classList.toggle("pan-mode");
     view.classList.toggle("pan-active");
-    view.style.touchAction = isPan ? "auto":"none";
+    view.style.touchAction = isPan ? "auto" : "none";
 }
 
-function clearGrid(){
-    if(!confirm("Vil du slette alt?")) return;
-    document.querySelectorAll(".cell").forEach(c=>{ c.textContent=""; c.classList.remove("active"); });
+function clearGrid() {
+    if (confirm("Vil du slette alt?")) {
+        document.querySelectorAll(".cell").forEach(c => {
+            c.textContent = "";
+            c.classList.remove("active");
+        });
+    }
 }
 
-// Pixel-perfekt PNG med margin
-function exportPNG(){
-    const MARGIN=80;
-    const SCALE=3;
-    html2canvas(grid,{backgroundColor:"#ffffff", scale:SCALE, logging:false}).then(c=>{
-        const out=document.createElement("canvas");
-        out.width=c.width+MARGIN*2*SCALE;
-        out.height=c.height+MARGIN*2*SCALE;
-        const ctx=out.getContext("2d");
-        ctx.imageSmoothingEnabled=false;
-        ctx.fillStyle="#ffffff";
-        ctx.fillRect(0,0,out.width,out.height);
-        ctx.drawImage(c, MARGIN*SCALE, MARGIN*SCALE);
-        const link=document.createElement("a");
-        link.download="design-grid.png";
-        link.href=out.toDataURL("image/png");
+// NY FUNKTION: Genererer et billede der bruges til BÅDE download og PDF
+function generateAndExport(type) {
+    const btn = event.target;
+    const oldLabel = btn.textContent;
+    btn.textContent = "Vent...";
+    
+    const MARGIN = 120; 
+    const SCALE = 2; 
+    const drawSize = SIZE * SCALE;
+    
+    const out = document.createElement("canvas");
+    out.width = (COLS * drawSize) + (MARGIN * 2);
+    out.height = (ROWS * drawSize) + (MARGIN * 2);
+    const ctx = out.getContext("2d");
+    
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, out.width, out.height);
+    
+    const cells = grid.children;
+    for (let i = 0; i < cells.length; i++) {
+        const r = Math.floor(i / COLS);
+        const c = i % COLS;
+        const x = MARGIN + (c * drawSize);
+        const y = MARGIN + (r * drawSize);
+        
+        if (cells[i].classList.contains("active")) {
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(x, y, drawSize, drawSize);
+        } else {
+            ctx.strokeStyle = "#dddddd";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, drawSize, drawSize);
+            
+            const txt = cells[i].textContent;
+            if (txt) {
+                ctx.fillStyle = "#000000";
+                ctx.font = `bold ${drawSize * 0.7}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(txt, x + drawSize/2, y + drawSize/2);
+            }
+        }
+    }
+    
+    const imgData = out.toDataURL("image/png");
+
+    if (type === 'png') {
+        const link = document.createElement("a");
+        link.download = "moenster.png";
+        link.href = imgData;
         link.click();
-    });
+        btn.textContent = oldLabel;
+    } else {
+        // PDF-løsning: Vis billedet i en ny fane og print dérfra
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write('<html><head><title>Print Mønster</title></head><body style="margin:0; display:flex; justify-content:center;">');
+        printWindow.document.write('<img src="' + imgData + '" style="max-width:100%; height:auto;">');
+        printWindow.document.write('<script>setTimeout(function(){window.print();window.close();}, 500);<\\/script>');
+        printWindow.document.write('</body></html>');
+        printWindow.document.close();
+        btn.textContent = oldLabel;
+    }
 }
-
-// PDF / print
-function exportPDF(){
-    html2canvas(grid,{backgroundColor:"#ffffff", scale:2, logging:false}).then(c=>{
-        const w=window.open("");
-        const img=c.toDataURL("image/png");
-        w.document.write('<html><body style="margin:0;display:flex;justify-content:center;">');
-        w.document.write('<img src="'+img+'" style="width:100%;height:auto;margin:40px 0;">');
-        w.document.write('</body></html>');
-        w.document.close();
-        w.focus();
-        w.print();
-    });
-}
-
 </script>
 </body>
 </html>
 """
 
 final_html = (
-    html.replace("__COLS__", str(cols))
+    html_code.replace("__COLS__", str(cols))
         .replace("__ROWS__", str(rows))
         .replace("__SIZE__", str(cell_size))
         .replace("__IMPORT__", json.dumps(import_data))
 )
 
 components.html(final_html, height=1000, scrolling=False)
-st.caption("Grid Designer Pro – pan, import og pixel-sikker eksport")
