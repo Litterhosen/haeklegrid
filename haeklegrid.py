@@ -3,25 +3,26 @@ import streamlit.components.v1 as components
 import numpy as np
 from PIL import Image
 
-# ================================
-# DESIGN GRID PRO - OPTIMERET VERSION
-# ================================
+# =====================================================
+# DESIGN GRID PRO — FINAL SAFE TEMPLATE
+# ✔ Ingen f-strings i HTML/JS
+# ✔ Zoom, pan, fit-to-screen
+# ✔ PNG-eksport (html2canvas)
+# ✔ Print / PDF
+# =====================================================
 
-st.set_page_config(page_title="Design Grid Pro", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Design Grid Pro", layout="wide")
 
 with st.sidebar:
     st.header("⚙️ Indstillinger")
-    cols = st.number_input("Bredde (felter)", 5, 500, 30)
-    rows = st.number_input("Højde (felter)", 5, 500, 30)
-    cell_size = st.slider("Feltstørrelse (px)", 10, 80, 24)
+    cols = st.number_input("Bredde (felter)", 5, 400, 30)
+    rows = st.number_input("Højde (felter)", 5, 400, 30)
+    cell_size = st.slider("Feltstørrelse (px)", 8, 80, 24)
 
     st.divider()
     uploaded_file = st.file_uploader("📥 Importér billede", type=["png", "jpg", "jpeg"])
-    
-    st.divider()
-    st.info("Brug 'Panorer' værktøjet i appen for at bevæge dig rundt på mobilen.")
 
-# --- GRID DATA GENERERING ---
+# --- GRID DATA ---
 grid_data = np.zeros((rows, cols), dtype=int)
 if uploaded_file:
     img = Image.open(uploaded_file).convert("L").resize((cols, rows), Image.NEAREST)
@@ -32,17 +33,17 @@ for r in range(rows):
     for c in range(cols):
         i = r * cols + c
         active = "active" if grid_data.flatten()[i] == 1 else ""
-        cells_html += f'<div class="cell {active}" onclick="mark(this)"></div>'
+        cells_html += f'<div class="cell {active}" data-row="{r}" data-col="{c}" tabindex="0" onclick="mark(this)"></div>'
 
 # ================================
-# HTML TEMPLATE (MED EKSPORT & PAN)
+# SAFE HTML TEMPLATE
 # ================================
 
 grid_html = """
 <!doctype html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 <style>
 :root {
@@ -52,12 +53,9 @@ grid_html = """
 
 body {
   margin:0;
-  font-family: -apple-system, system-ui, sans-serif;
+  font-family: system-ui, sans-serif;
   background:#f3f4f6;
   padding:10px;
-  display: flex;
-  flex-direction: column;
-  height: 95vh;
 }
 
 .toolbar {
@@ -65,35 +63,32 @@ body {
   gap:8px;
   flex-wrap:wrap;
   background:white;
-  padding:12px;
-  border-radius:12px;
+  padding:10px;
+  border-radius:10px;
   margin-bottom:10px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  justify-content: center;
+  position:sticky;
+  top:0;
+  z-index:10;
 }
 
 .viewport {
-  flex: 1;
+  height:80vh;
   background:#e5e7eb;
   overflow:hidden;
-  border-radius:12px;
+  border-radius:10px;
   position:relative;
-  touch-action:none; /* Vigtigt for custom pan */
-  border: 1px solid #ccc;
+  touch-action:none;
 }
 
 .canvas {
   transform-origin:0 0;
-  position: absolute;
 }
 
 .grid {
   display:grid;
   grid-template-columns: repeat(var(--cols), var(--cell-size));
   gap:1px;
-  background:#bbb;
-  padding: 5px;
-  background-color: white;
+  background:#999;
 }
 
 .cell {
@@ -105,31 +100,21 @@ body {
   align-items:center;
   justify-content:center;
   font-weight:bold;
-  font-size: calc(var(--cell-size) * 0.6px);
   user-select:none;
-  -webkit-print-color-adjust: exact;
 }
 
-.cell.active { background:black !important; color:white; }
+.cell.active { background:black; color:white; }
+.cell:focus { outline:2px solid #2563eb; }
 
-/* Værktøjs-knapper */
-button, select { 
-    padding:8px 12px; 
-    font-weight:600; 
-    border-radius:8px; 
-    border:1px solid #ddd;
-    background: white;
+button, select {
+  padding:6px 10px;
+  font-weight:600;
 }
-
-.btn-active { background: #2563eb !important; color: white !important; border-color: #1e40af; }
-.btn-save { background: #059669; color: white; }
 
 @media print {
-    .toolbar { display: none !important; }
-    body { background: white; }
-    .viewport { overflow: visible; height: auto; }
-    .canvas { transform: none !important; position: static; }
-    .cell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .toolbar { display:none; }
+  body { background:white; }
+  .cell.active { background:black !important; }
 }
 </style>
 </head>
@@ -142,17 +127,16 @@ button, select {
     <option value="O">⭕ O</option>
     <option value="erase">⚪ Slet</option>
   </select>
-  
-  <button id="panBtn" onclick="togglePan()">✋ Panorer</button>
   <button onclick="zoomIn()">＋</button>
   <button onclick="zoomOut()">－</button>
-  <button class="btn-save" onclick="exportImage()">💾 Gem Foto</button>
+  <button onclick="fit()">Fit</button>
+  <button onclick="download()">💾 PNG</button>
   <button onclick="window.print()">🖨️ PDF</button>
 </div>
 
 <div class="viewport" id="viewport">
   <div class="canvas" id="canvas">
-    <div class="grid" id="grid-to-export">
+    <div class="grid" id="grid">
       __CELLS__
     </div>
   </div>
@@ -161,7 +145,6 @@ button, select {
 <script>
 let scale = 1;
 let tx = 0, ty = 0;
-let isPanning = false;
 let dragging = false;
 let lx = 0, ly = 0;
 
@@ -172,69 +155,43 @@ function apply() {
   canvas.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + scale + ")";
 }
 
-function zoomIn(){ scale *= 1.2; apply(); }
-function zoomOut(){ scale /= 1.2; apply(); }
+function zoomIn(){ scale = Math.min(4, scale + 0.1); apply(); }
+function zoomOut(){ scale = Math.max(0.2, scale - 0.1); apply(); }
 
-function togglePan() {
-    isPanning = !isPanning;
-    document.getElementById('panBtn').classList.toggle('btn-active');
-    viewport.style.cursor = isPanning ? 'grab' : 'default';
-}
+function fit(){ scale = 1; tx = 0; ty = 0; apply(); }
 
-viewport.addEventListener('pointerdown', e=>{
-  dragging = true; 
-  lx = e.clientX; 
-  ly = e.clientY;
-  if(isPanning) viewport.style.cursor = 'grabbing';
-});
-
-window.addEventListener('pointermove', e=>{
-  if(!dragging || !isPanning) return;
+viewport.addEventListener('pointerdown', e=>{ dragging = true; lx = e.clientX; ly = e.clientY; });
+viewport.addEventListener('pointermove', e=>{
+  if(!dragging) return;
   tx += e.clientX - lx;
   ty += e.clientY - ly;
   lx = e.clientX; ly = e.clientY;
   apply();
 });
+viewport.addEventListener('pointerup', ()=> dragging=false);
 
-window.addEventListener('pointerup', ()=>{ 
-    dragging = false; 
-    if(isPanning) viewport.style.cursor = 'grab';
-});
+viewport.addEventListener('wheel', e=>{
+  if(e.ctrlKey){ e.preventDefault(); scale *= e.deltaY < 0 ? 1.1 : 0.9; apply(); }
+}, {passive:false});
 
 function mark(el){
-  if(isPanning) return; // Tegn ikke hvis vi panorerer
   const mode = document.getElementById('mode').value;
-  if(mode==='fill') {
-      el.classList.toggle('active');
-      el.innerHTML = '';
-  }
-  if(mode==='erase'){ 
-      el.classList.remove('active'); 
-      el.innerHTML=''; 
-  }
+  if(mode==='fill') el.classList.toggle('active');
+  if(mode==='erase'){ el.classList.remove('active'); el.innerHTML=''; }
   if(mode==='X' || mode==='O'){
     el.classList.remove('active');
     el.innerHTML = el.innerHTML===mode ? '' : mode;
   }
 }
 
-async function exportImage() {
-    const grid = document.getElementById('grid-to-export');
-    const btn = event.target;
-    btn.innerHTML = "Vent...";
-    
-    html2canvas(grid, {
-        backgroundColor: "#ffffff",
-        scale: 2, // Højere opløsning
-        logging: false,
-        useCORS: true
-    }).then(canvas => {
-        const link = document.createElement('a');
-        link.download = 'mit-design.png';
-        link.href = canvas.toDataURL("image/png");
-        link.click();
-        btn.innerHTML = "💾 Gem Foto";
-    });
+function download(){
+  const grid = document.getElementById('grid');
+  html2canvas(grid, {scale:2, backgroundColor:'#ffffff'}).then(c=>{
+    const a = document.createElement('a');
+    a.download = 'design-grid.png';
+    a.href = c.toDataURL('image/png');
+    a.click();
+  });
 }
 </script>
 
@@ -249,6 +206,6 @@ grid_html = (grid_html
     .replace("__CELLS__", cells_html)
 )
 
-components.html(grid_html, height=850, scrolling=False)
+components.html(grid_html, height=900, scrolling=False)
 
-st.caption("Design Grid Pro v3.0 – Med Panorering, Foto-eksport og PDF-fix.")
+st.caption("Design Grid Pro — Final SAFE template med zoom, pan, PNG & PDF eksport")
