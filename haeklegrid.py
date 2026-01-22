@@ -41,8 +41,8 @@ body {{ margin:0; background:#f2f2f2; font-family:-apple-system, Arial, sans-ser
 button, select {{ padding:10px 14px; border-radius:8px; border:1px solid #ccc; background:white; cursor:pointer; font-weight:600; }}
 button.primary {{ background:#007aff; color:white; border:none; }}
 button.active-tool {{ background:#5856d6; color:white; }}
-.grid-wrap {{ flex:1; overflow:auto; -webkit-overflow-scrolling: touch; padding:20px; background:#e5e5e5; touch-action: none; }}
-.grid {{ display:grid; gap:1px; width:fit-content; margin:0 auto; background:white; box-shadow:0 0 10px rgba(0,0,0,0.1); }}
+.grid-wrap {{ flex:1; overflow:auto; -webkit-overflow-scrolling: touch; padding:20px; background:#e5e5e5; touch-action: none; display:flex; justify-content:center; align-items:flex-start; }}
+.grid {{ display:grid; gap:1px; background:white; box-shadow:0 0 10px rgba(0,0,0,0.1); }}
 .cell {{ background:white; display:flex; align-items:center; justify-content:center; font-weight:bold; user-select:none; }}
 .cell.active {{ background:black; color:white; }}
 .pan-mode .cell {{ pointer-events:none; cursor:grab; }}
@@ -79,24 +79,27 @@ let isPan=false;
 const grid=document.getElementById("grid");
 const view=document.getElementById("view");
 
-// Sæt grid kolonner korrekt
+// Sæt grid kolonner og dimensioner
 grid.style.gridTemplateColumns = "repeat(" + COLS + ", " + SIZE + "px)";
+grid.style.gridTemplateRows = "repeat(" + ROWS + ", " + SIZE + "px)";
 
 // Generer celler
-for(let i=0;i<ROWS*COLS;i++){{
-    const cell=document.createElement("div");
-    cell.className="cell";
-    cell.style.width=SIZE+"px";
-    cell.style.height=SIZE+"px";
-    cell.style.fontSize=(SIZE*0.6)+"px";
-    cell.onclick=function(){{
-        if(isPan) return;
-        const mode=document.getElementById("mode").value;
-        if(mode==="fill"){{ cell.textContent=""; cell.classList.toggle("active"); }}
-        else if(mode==="erase"){{ cell.textContent=""; cell.classList.remove("active"); }}
-        else{{ cell.classList.remove("active"); cell.textContent=cell.textContent===mode?"":mode; }}
-    }};
-    grid.appendChild(cell);
+for(let r=0;r<ROWS;r++){{
+    for(let c=0;c<COLS;c++){{
+        const cell=document.createElement("div");
+        cell.className="cell";
+        cell.style.width=SIZE+"px";
+        cell.style.height=SIZE+"px";
+        cell.style.fontSize=(SIZE*0.6)+"px";
+        cell.onclick=function(){{
+            if(isPan) return;
+            const mode=document.getElementById("mode").value;
+            if(mode==="fill"){{ cell.textContent=""; cell.classList.toggle("active"); }}
+            else if(mode==="erase"){{ cell.textContent=""; cell.classList.remove("active"); }}
+            else{{ cell.classList.remove("active"); cell.textContent=cell.textContent===mode?"":mode; }}
+        }};
+        grid.appendChild(cell);
+    }}
 }}
 
 // Import billede
@@ -159,4 +162,4 @@ function exportPDF(){{
 """
 
 components.html(html, height=1000, scrolling=False)
-st.caption("Ultimate Grid Designer – pan, pinch-zoom, import og pixel-perfekt eksport")
+st.caption("Ultimate Grid Designer – nu vises grid, pan, import og pixel-perfekt eksport")
