@@ -10,23 +10,33 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Skjul Streamlit UI elementer permanent med CSS (fjerner Fork, GitHub, Menu osv.)
+st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stDeployButton {display:none;}
+    [data-testid="stHeader"] {display:none;}
+    [data-testid="stToolbar"] {display:none;}
+    </style>
+    """, unsafe_allow_html=True)
+
 # ---------- SIDEBAR ----------
 with st.sidebar:
     st.header("⚙️ Indstillinger")
-    cols = st.number_input("Kolonner", 5, 400, 120)
-    rows = st.number_input("Rækker", 5, 400, 120)
-    cell_size = st.slider("Zoom (feltstørrelse)", 5, 60, 20)
+    cols = st.number_input("Kolonner", 5, 400, 60)
+    rows = st.number_input("Rækker", 5, 400, 60)
+    cell_size = st.slider("Zoom", 5, 60, 20)
 
     st.divider()
-    st.header("📥 Import")
-    uploaded_file = st.file_uploader("Konverter billede", type=["png", "jpg", "jpeg"])
+    uploaded_file = st.file_uploader("Importér billede", type=["png", "jpg", "jpeg"])
     
     import_data = []
     if uploaded_file:
         img = Image.open(uploaded_file).convert("L").resize((cols, rows), Image.NEAREST)
         arr = np.array(img)
         import_data = np.where(arr.flatten() < 128)[0].tolist()
-        st.success("Billede klar!")
 
 # ---------- HTML & JAVASCRIPT ----------
 html_template = """
@@ -39,18 +49,16 @@ html_template = """
 <style>
 body {
     margin: 0; padding: 0;
-    background: #e5e5e5;
+    background: #f0f0f0;
     font-family: -apple-system, sans-serif;
     display: flex; flex-direction: column;
     height: 100vh; overflow: hidden;
 }
 
-/* UI ELEMENTER */
 .toolbar {
-    position: sticky; top: 0;
-    background: white; padding: 10px;
+    background: white; padding: 15px;
     border-bottom: 1px solid #ccc;
-    display: flex; flex-wrap: wrap; gap: 8px;
+    display: flex; flex-wrap: wrap; gap: 10px;
     z-index: 1001; justify-content: center;
 }
 
@@ -61,11 +69,10 @@ body {
     -webkit-overflow-scrolling: touch;
 }
 
-/* SELVE GRIDSET */
 .grid {
     display: grid;
     gap: 1px; 
-    background-color: #000 !important; /* Gitterlinjer */
+    background-color: #000 !important;
     border: 1px solid #000;
     width: fit-content;
     background-color: white;
@@ -78,39 +85,35 @@ body {
     min-width: var(--sz); min-height: var(--sz);
 }
 
-.cell.active { background-color: black !important; color: white !important; }
+.cell.active { background-color: black !important; }
 
-button, select {
-    padding: 10px 14px; border-radius: 8px;
-    border: 1px solid #ccc; background: white;
-    font-size: 13px; font-weight: 600; cursor: pointer;
+button {
+    padding: 12px 18px; border-radius: 10px;
+    border: none; background: #eee;
+    font-size: 14px; font-weight: 600; cursor: pointer;
 }
 
-.btn-png { background: #007aff; color: white; border: none; }
-.btn-active { background: #5856d6 !important; color: white !important; }
+.btn-blue { background: #007aff; color: white; }
+.btn-green { background: #34c759; color: white; }
 
-/* PRINT REGLER - DETTE ER NØGLEN TIL DIT ØNSKE */
+/* ULTRA-REN PRINT: Skjuler ALT undtagen mønstret */
 @media print {
-    /* Skjul alt undtagen grid-beholderen */
-    body * { visibility: hidden; }
-    #grid, #grid * { visibility: visible; }
+    @page { margin: 0; }
+    body, html { background: white !important; }
+    /* Skjul alt i parent containers (Streamlit) */
+    header, footer, .toolbar, #loading { display: none !important; }
     
-    /* Positionér gridet øverst til venstre på papiret */
-    #grid {
-        position: absolute;
-        left: 0;
-        top: 0;
-        border: 1px solid black !important;
-        gap: 0 !important; /* Fjern gap for pænere print linjer */
+    /* Tving kun grid til at være synlig */
+    .grid-wrap { padding: 0; margin: 0; overflow: visible !important; }
+    .grid { 
+        position: absolute; left: 0; top: 0;
+        gap: 0 !important; border: 1px solid black !important; 
     }
-    
-    .cell {
-        border: 0.1pt solid black !important; /* Tvinger gitteret frem på PDF */
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
+    .cell { 
+        border: 0.1pt solid black !important;
+        -webkit-print-color-adjust: exact; 
+        print-color-adjust: exact; 
     }
-    
-    .grid-wrap { padding: 0; overflow: visible; display: block; }
 }
 
 #loading {
@@ -121,19 +124,18 @@ button, select {
 </head>
 <body>
 
-<div id="loading">Indlæser mønster...</div>
+<div id="loading">Opbygger gitter...</div>
 
 <div class="toolbar">
-    <select id="mode">
+    <select id="mode" style="padding:10px; border-radius:8px;">
         <option value="fill">⚫ Sort</option>
         <option value="X">❌ X</option>
         <option value="O">⭕ O</option>
         <option value="erase">⚪ Slet</option>
     </select>
     <button id="panBtn" onclick="togglePan()">✋ Panorer</button>
-    <button class="btn-png" onclick="exportPNG()">📸 Gem i Kamerarulle</button>
-    <button class="btn-png" style="background:#34c759" onclick="exportSVG()">📐 Gem SVG</button>
-    <button onclick="window.print()">🖨️ PDF / Print</button>
+    <button class="btn-blue" onclick="saveToCamera()">📸 Gem i Fotos</button>
+    <button class="btn-green" onclick="window.print()">🖨️ PDF / Print</button>
     <button onclick="clearGrid()">🗑️ Ryd</button>
 </div>
 
@@ -190,7 +192,8 @@ setTimeout(generateGrid, 50);
 
 function togglePan() {
     isPanMode = !isPanMode;
-    document.getElementById("panBtn").classList.toggle("btn-active");
+    document.getElementById("panBtn").style.background = isPanMode ? "#5856d6" : "#eee";
+    document.getElementById("panBtn").style.color = isPanMode ? "white" : "black";
     document.getElementById("view").style.touchAction = isPanMode ? "auto" : "none";
 }
 
@@ -203,45 +206,33 @@ function clearGrid() {
     }
 }
 
-// PNG EKSPORT TIL KAMERARULLE
-function exportPNG() {
+// NY METODE TIL KAMERARULLE (Mobil optimeret)
+function saveToCamera() {
     const btn = event.target;
-    btn.textContent = "Vent...";
+    btn.textContent = "Genererer...";
+    
     html2canvas(grid, { 
         backgroundColor: "#ffffff", 
-        scale: 2,
-        logging: false 
+        scale: 3, // Høj kvalitet
+        useCORS: true
     }).then(canvas => {
-        const link = document.createElement("a");
-        link.download = "mit-moenster.png";
-        link.href = canvas.toDataURL("image/png");
-        link.click();
-        btn.textContent = "📸 Gem i Kamerarulle";
+        canvas.toBlob(function(blob) {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "mit-haekle-moenster.png";
+            
+            // Simuler klik
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            btn.textContent = "📸 Gem i Fotos";
+            
+            // På iPhone vil dette nu oftere trigger "Gem billede" dialogen direkte
+            // fremfor kun at sende til filer.
+        }, 'image/png');
     });
-}
-
-// SVG EKSPORT
-function exportSVG() {
-    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${COLS * SIZE}" height="${ROWS * SIZE}">`;
-    svg += `<rect width="100%" height="100%" fill="white"/>`;
-    const cells = document.querySelectorAll('.cell');
-    cells.forEach((cell, i) => {
-        const x = (i % COLS) * SIZE;
-        const y = Math.floor(i / COLS) * SIZE;
-        if (cell.classList.contains('active')) {
-            svg += `<rect x="${x}" y="${y}" width="${SIZE}" height="${SIZE}" fill="black"/>`;
-        } else if (cell.textContent) {
-            svg += `<text x="${x + SIZE/2}" y="${y + SIZE/2 + SIZE*0.25}" font-family="Arial" font-size="${SIZE*0.7}" text-anchor="middle">${cell.textContent}</text>`;
-        }
-        svg += `<rect x="${x}" y="${y}" width="${SIZE}" height="${SIZE}" fill="none" stroke="#ccc" stroke-width="0.5"/>`;
-    });
-    svg += "</svg>";
-    const blob = new Blob([svg], {type: 'image/svg+xml'});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "moenster.svg";
-    link.click();
 }
 </script>
 </body>
@@ -255,4 +246,5 @@ final_html = (html_template
     .replace("__IMPORT_DATA__", json.dumps(import_data))
 )
 
-components.html(final_html, height=1000, scrolling=False)
+# Vi bruger en lidt større højde for at sikre plads til værktøjslinjen på mobil
+components.html(final_html, height=1200, scrolling=False)
