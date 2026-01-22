@@ -1,50 +1,64 @@
 import streamlit as st
-from streamlit_drawable_canvas import st_canvas
-from PIL import Image
-import numpy as np
+import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Hækle Design", layout="wide")
+st.set_page_config(page_title="Hækle Grid", layout="wide")
+
+st.sidebar.header("Indstillinger")
+rows = st.sidebar.number_input("Rækker", 5, 50, 15)
+cols = st.sidebar.number_input("Kolonner", 5, 30, 15)
+cell_size = st.sidebar.slider("Zoom (Pixel størrelse)", 15, 50, 30)
 
 st.title("🧶 Hækle-Grid (Stitch Fiddle Style)")
+st.write("Klik på felterne for at tænde/slukke dem.")
 
-# --- SIDEBAR INDSTILLINGER ---
-st.sidebar.header("Indstillinger")
-grid_size = st.sidebar.slider("Maskestørrelse (zoom)", 10, 50, 25)
-rows = st.sidebar.number_input("Rækker", 5, 100, 20)
-cols = st.sidebar.number_input("Kolonner", 5, 100, 20)
-
-bg_color = "#ffffff"
-drawing_mode = st.sidebar.selectbox("Værktøj", ("Fyld maske", "Viskelæder"))
-stroke_width = st.sidebar.slider("Pensel størrelse", 1, 10, 3)
-
-# --- CANVAS OPSÆTNING ---
-# Her beregner vi størrelsen i pixels
-width = cols * grid_size
-height = rows * grid_size
-
-st.write(f"Brug din finger eller mus til at tegne direkte på nettet ({cols}x{rows} masker):")
-
-canvas_result = st_canvas(
-    fill_color="rgba(0, 0, 0, 1)",  # Farve på masken
-    stroke_width=stroke_width,
-    stroke_color="#000000" if drawing_mode == "Fyld maske" else "#ffffff",
-    background_color=bg_color,
-    height=height,
-    width=width,
-    drawing_mode="freedraw",
-    key="canvas",
-    display_toolbar=True,
-)
-
-# --- INSTRUKTIONER ---
-st.info("💡 Tryk på 'Download' ikonet under nettet for at gemme dit billede.")
-
-st.markdown("""
+# Vi bygger selve gridet i ren HTML/CSS for at tvinge layoutet på plads
+html_code = f"""
+<!DOCTYPE html>
+<html>
+<head>
 <style>
-    /* Gør det nemt at tegne på mobil uden at siden ruller */
-    canvas {
-        border: 1px solid #ccc;
-        touch-action: none;
-    }
+  /* Dette sikrer at gridet ALDRIG stabler sig, selv på mobil */
+  .grid-container {{
+    display: grid;
+    grid-template-columns: repeat({cols}, {cell_size}px); /* Tvinger X antal kolonner */
+    gap: 1px;
+    background-color: #ddd; /* Farven på stregerne imellem */
+    width: fit-content;
+    padding: 10px;
+  }}
+
+  .cell {{
+    width: {cell_size}px;
+    height: {cell_size}px;
+    background-color: white;
+    cursor: pointer;
+  }}
+
+  /* Når klassen 'active' er på, bliver den sort */
+  .cell.active {{
+    background-color: black;
+  }}
 </style>
-""", unsafe_allow_html=True)
+</head>
+<body>
+
+<div class="grid-container" id="grid">
+  {''.join([f'<div class="cell" onclick="toggle(this)" id="c-{i}"></div>' for i in range(rows * cols)])}
+</div>
+
+<script>
+  // Simpel javascript der skifter farve med det samme (uden ventetid)
+  function toggle(el) {{
+    el.classList.toggle("active");
+  }}
+</script>
+
+</body>
+</html>
+"""
+
+# Indsæt HTML'en i appen
+# height beregnes så scrollbaren passer nogenlunde
+components.html(html_code, height=(rows * cell_size) + 50, scrolling=True)
+
+st.sidebar.info("Bemærk: Da dette kører som ren grafik, nulstilles mønsteret hvis du ændrer antal rækker/kolonner.")
