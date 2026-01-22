@@ -42,32 +42,68 @@ html_code = f"""
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <style>
-body {{ margin: 0; background: #222; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }}
-
-.toolbar {{ 
-    position: sticky; top: 0; background: #fff; padding: 10px; 
-    border-bottom: 2px solid #000; display: flex; flex-wrap: wrap; 
-    gap: 8px; z-index: 1000; justify-content: center; 
+body {{
+    margin: 0;
+    background: #222;
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
 }}
 
-button, select {{ padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; background: white; cursor: pointer; font-weight: 600; }}
-button.primary {{ background: #007aff; color: white; border: none; }}
-button.active-tool {{ background: #ff9500 !important; color: white !important; }}
+.toolbar {{
+    position: sticky;
+    top: 0;
+    background: #fff;
+    padding: 10px;
+    border-bottom: 2px solid #000;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    z-index: 1000;
+    justify-content: center;
+}}
 
-.grid-wrap {{ 
-    flex: 1; overflow: auto; padding: 40px; 
-    background: #444; display: flex; justify-content: center; align-items: flex-start;
+button, select {{
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    background: white;
+    cursor: pointer;
+    font-weight: 600;
+}}
+button.primary {{
+    background: #007aff;
+    color: white;
+    border: none;
+}}
+button.active-tool {{
+    background: #ff9500 !important;
+    color: white !important;
+}}
+
+.grid-wrap {{
+    flex: 1;
+    overflow: auto;
+    padding: 40px;
+    background: #444;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
     -webkit-overflow-scrolling: touch;
 }}
 
-canvas {{ 
-    background: white; 
-    box-shadow: 0 0 20px rgba(0,0,0,0.5); 
+canvas {{
+    background: white;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
     display: block;
     cursor: crosshair;
 }}
 
-.pan-active canvas {{ cursor: grab; }}
+.pan-active canvas {{
+    cursor: grab;
+}}
 </style>
 </head>
 <body>
@@ -120,16 +156,32 @@ function draw() {{
     // Tegn baggrund
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+    
+    // Tegn Grid linjer
+    ctx.strokeStyle = "#ddd";
+    ctx.lineWidth = 1;
+    
+    // Lodrette linjer
+    for (let c = 0; c <= COLS; c++) {{
+        ctx.beginPath();
+        ctx.moveTo(c * SIZE, 0);
+        ctx.lineTo(c * SIZE, canvas.height);
+        ctx.stroke();
+    }}
+    
+    // Vandre linjer
+    for (let r = 0; r <= ROWS; r++) {{
+        ctx.beginPath();
+        ctx.moveTo(0, r * SIZE);
+        ctx.lineTo(canvas.width, r * SIZE);
+        ctx.stroke();
+    }}
+    
+    // Tegn celler
     for (let r = 0; r < ROWS; r++) {{
         for (let c = 0; c < COLS; c++) {{
             const x = c * SIZE;
             const y = r * SIZE;
-            
-            // Tegn Grid (altid synligt)
-            ctx.strokeStyle = "#ddd";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(x, y, SIZE, SIZE);
             
             const cell = gridData[r][c];
             if (cell === 'fill') {{
@@ -193,14 +245,31 @@ function exportSmart(type) {{
     octx.fillStyle = "white";
     octx.fillRect(0, 0, out.width, out.height);
     
+    // Tegn grid linjer på eksport
+    octx.strokeStyle = "#ccc";
+    octx.lineWidth = 1;
+    
+    // Lodrette linjer
+    for (let c = 0; c <= COLS; c++) {{
+        octx.beginPath();
+        octx.moveTo(c * s + m, 0);
+        octx.lineTo(c * s + m, out.height);
+        octx.stroke();
+    }}
+    
+    // Vandre linjer
+    for (let r = 0; r <= ROWS; r++) {{
+        octx.beginPath();
+        octx.moveTo(0, r * s + m);
+        octx.lineTo(out.width, r * s + m);
+        octx.stroke();
+    }}
+    
+    // Tegn celler
     for (let r = 0; r < ROWS; r++) {{
         for (let c = 0; c < COLS; c++) {{
             const x = c * s + m;
             const y = r * s + m;
-            
-            octx.strokeStyle = "#ccc";
-            octx.lineWidth = 1;
-            octx.strokeRect(x, y, s, s);
             
             const cell = gridData[r][c];
             if (cell === 'fill') {{
