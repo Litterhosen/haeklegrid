@@ -4,6 +4,7 @@ import json
 
 st.set_page_config(page_title="Grid Designer Pro", layout="wide", initial_sidebar_state="collapsed")
 
+# Fjern Streamlit UI
 st.markdown("""
     <style>
     header, footer, .stDeployButton, [data-testid="stHeader"] {display:none !important;}
@@ -24,25 +25,26 @@ html_code = """
         justify-content: center; align-items: center; border-bottom: 2px solid #bdc3c7; z-index: 100;
     }
     .group { display: flex; gap: 4px; align-items: center; border: 1px solid #ddd; padding: 4px; border-radius: 6px; background: #fff; }
-    button, select, input { padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; cursor: pointer; font-size: 12px; height: 36px; }
+    button, select, input { padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; cursor: pointer; font-size: 11px; height: 36px; }
     .btn-blue { background: #3498db; color: white; border: none; }
     .btn-green { background: #27ae60; color: white; border: none; }
     .btn-red { background: #e74c3c; color: white; border: none; }
     .active-tool { background: #f1c40f !important; color: black !important; }
     .viewport { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; background: #34495e; touch-action: none; }
     canvas { background: white; box-shadow: 0 0 30px rgba(0,0,0,0.5); transform-origin: 0 0; image-rendering: pixelated; }
+    #imgInput { width: 90px; font-size: 9px; }
 </style>
 </head>
 <body>
 
 <div class="toolbar">
     <div class="group">
-        <input type="number" id="rows" value="60" style="width:45px"> x <input type="number" id="cols" value="60" style="width:45px">
+        <input type="number" id="rows" value="60" style="width:40px">x<input type="number" id="cols" value="60" style="width:40px">
         <button onclick="initGrid()">OK</button>
     </div>
     <div class="group">
-        <button onclick="undo()">↩️</button>
-        <button onclick="redo()">↪️</button>
+        <button onclick="undo()" title="Fortryd">↩️</button>
+        <button onclick="redo()" title="Gendan">↪️</button>
     </div>
     <div class="group">
         <select id="mode">
@@ -54,9 +56,10 @@ html_code = """
         <button id="panBtn" onclick="togglePan()">✋ PAN</button>
     </div>
     <div class="group">
+        <input type="file" id="imgInput" accept="image/*">
         <button class="btn-blue" onclick="exportData('png')">📸</button>
         <button class="btn-green" onclick="exportData('pdf')">🖨️</button>
-        <button onclick="resetCanvas()">🗑️</button>
+        <button class="btn-red" onclick="resetCanvas()">🗑️</button>
     </div>
 </div>
 
@@ -98,9 +101,12 @@ html_code = """
                 const x = c * SIZE + OFFSET, y = r * SIZE + OFFSET;
                 if (r === 0 && (c + 1) % 5 === 0) ctx.fillText(c + 1, x + SIZE/2, OFFSET/2);
                 if (c === 0 && (r + 1) % 5 === 0) ctx.fillText(r + 1, OFFSET/2, y + SIZE/2);
+                
+                ctx.beginPath();
                 ctx.strokeStyle = ((r+1)%5===0 || (c+1)%5===0) ? "#bdc3c7" : "#ecf0f1";
                 ctx.lineWidth = ((r+1)%5===0 || (c+1)%5===0) ? 1.5 : 1;
                 ctx.strokeRect(x, y, SIZE, SIZE);
+                
                 const val = gridData[r][c];
                 if (val === 'fill') { ctx.fillStyle = "black"; ctx.fillRect(x+1, y+1, SIZE-2, SIZE-2); }
                 else if (val) { ctx.fillStyle = "black"; ctx.font = `bold ${SIZE*0.6}px Arial`; ctx.fillText(val, x+SIZE/2, y+SIZE/2); ctx.font = "10px Arial"; }
@@ -108,7 +114,6 @@ html_code = """
         }
     }
 
-    // --- NY FORBEDRET TOUCH/MUS LOGIK ---
     let isDown = false, evCache = [], prevDiff = -1;
 
     canvas.addEventListener('pointerdown', e => {
@@ -129,16 +134,14 @@ html_code = """
             vp.scrollTop -= e.movementY;
             return;
         }
-        
-        // Pinch Zoom håndtering
         if (e.pointerType === 'touch') {
             const index = evCache.findIndex(ev => ev.pointerId === e.pointerId);
-            evCache[index] = e;
+            if (index > -1) evCache[index] = e;
             if (evCache.length === 2) {
                 const curDiff = Math.hypot(evCache[0].clientX - evCache[1].clientX, evCache[0].clientY - evCache[1].clientY);
                 if (prevDiff > 0) {
                     let zoom = curDiff / prevDiff;
-                    scale = Math.min(Math.max(0.3, scale * zoom), 4);
+                    scale = Math.min(Math.max(0.2, scale * zoom), 5);
                     canvas.style.transform = `scale(${scale})`;
                 }
                 prevDiff = curDiff;
@@ -147,7 +150,7 @@ html_code = """
     });
 
     function handleAction(e) {
-        if (evCache.length >= 2) return; // Ingen tegning ved zoom
+        if (evCache.length >= 2) return;
         const rect = canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / scale;
         const y = (e.clientY - rect.top) / scale;
@@ -164,6 +167,29 @@ html_code = """
         }
     }
 
+    // --- Billedimport logik ---
+    document.getElementById('imgInput').onchange = function(e) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                saveHistory(); // Gem tilstand før import
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = COLS; tempCanvas.height = ROWS;
+                const tCtx = tempCanvas.getContext('2d');
+                tCtx.drawImage(img, 0, 0, COLS, ROWS);
+                const pix = tCtx.getImageData(0, 0, COLS, ROWS).data;
+                for(let i=0; i<pix.length; i+=4) {
+                    const avg = (pix[i]+pix[i+1]+pix[i+2])/3;
+                    gridData[Math.floor((i/4)/COLS)][(i/4)%COLS] = avg < 128 ? 'fill' : null;
+                }
+                draw();
+            }
+            img.src = event.target.result;
+        }
+        reader.readAsDataURL(e.target.files[0]);
+    };
+
     function togglePan() {
         isPan = !isPan;
         document.getElementById('panBtn').classList.toggle('active-tool');
@@ -173,7 +199,7 @@ html_code = """
         const url = canvas.toDataURL("image/png");
         if(type === 'png') {
             const a = document.createElement('a');
-            a.download = "design.png"; a.href = url; a.click();
+            a.download = "crochet-design.png"; a.href = url; a.click();
         } else {
             const w = window.open();
             w.document.write(`<html><body style="margin:0;display:flex;justify-content:center;"><img src="${url}" style="max-width:95%;height:auto;" onload="window.print();"></body></html>`);
