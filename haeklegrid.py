@@ -4,242 +4,156 @@ import numpy as np
 from PIL import Image
 import json
 
-# Sætter siden op til at bruge hele bredden og fjerne alt standard UI
-st.set_page_config(page_title="Grid Designer Pro", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="Ultimate Grid Designer",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-st.markdown("""
-    <style>
-    /* Fjerner Streamlits topbar, menu og padding helt */
-    [data-testid="stHeader"], [data-testid="stToolbar"], footer {display:none !important;}
-    .main .block-container {padding: 0 !important; max-width: 100% !important;}
-    iframe {display: block;}
-    </style>
-    """, unsafe_allow_html=True)
-
+# ---------- SIDEBAR ----------
 with st.sidebar:
-    st.header("⚙️ Indstillinger")
-    cols = st.number_input("Kolonner", 5, 400, 120)
-    rows = st.number_input("Rækker", 5, 400, 120)
-    cell_size = st.slider("Zoom / Feltstørrelse", 5, 60, 25)
+    st.header("Indstillinger")
+    cols = st.number_input("Kolonner", min_value=120, max_value=400, value=120)
+    rows = st.number_input("Rækker", min_value=120, max_value=400, value=120)
+    cell_size = st.slider("Zoom (px per felt)", 5, 60, 20)
+
     st.divider()
     uploaded = st.file_uploader("Importér billede", type=["png", "jpg", "jpeg"])
-    
+
     import_data = []
     if uploaded:
         img = Image.open(uploaded).convert("L").resize((cols, rows), Image.NEAREST)
-        import_data = np.where(np.array(img).flatten() < 128)[0].tolist()
+        arr = np.array(img)
+        import_data = np.argwhere(arr < 128).flatten().tolist()
 
-html_template = """
+    st.write("Klik udenfor panelet for at lukke.")
+
+# ---------- HTML ----------
+html = f"""
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 <style>
-    body { margin: 0; padding: 0; font-family: sans-serif; background: #222; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
-    
-    /* FASTLÅST MENU I TOPPEN */
-    .header-menu { 
-        background: #1a1a1a; color: white; padding: 12px; 
-        display: flex; gap: 12px; justify-content: center; align-items: center;
-        z-index: 10000; border-bottom: 2px solid #000; flex-wrap: wrap;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-    }
-    
-    .canvas-container { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 40px; -webkit-overflow-scrolling: touch; }
-    
-    canvas { background: #fff; cursor: crosshair; box-shadow: 0 0 25px rgba(0,0,0,0.5); display: block; }
-    
-    button, select { padding: 12px 16px; border-radius: 8px; border: 1px solid #444; font-weight: bold; cursor: pointer; font-size: 14px; }
-    .btn-blue { background: #007aff; color: white; border: none; }
-    .btn-green { background: #34c759; color: white; border: none; }
-    .btn-pan.active { background: #ff9500 !important; color: white !important; }
-    
-    select { background: #fff; color: #000; }
+body {{ margin:0; background:#f2f2f2; font-family:-apple-system, Arial, sans-serif; display:flex; flex-direction:column; height:100vh; }}
+.toolbar {{ position:sticky; top:0; background:white; padding:10px; border-bottom:1px solid #ddd; display:flex; flex-wrap:wrap; gap:8px; z-index:1000; justify-content:center; }}
+button, select {{ padding:10px 14px; border-radius:8px; border:1px solid #ccc; background:white; cursor:pointer; font-weight:600; }}
+button.primary {{ background:#007aff; color:white; border:none; }}
+button.active-tool {{ background:#5856d6; color:white; }}
+.grid-wrap {{ flex:1; overflow:auto; -webkit-overflow-scrolling: touch; padding:20px; background:#e5e5e5; touch-action: none; }}
+.grid {{ display:grid; gap:1px; width:fit-content; margin:0 auto; background:white; box-shadow:0 0 10px rgba(0,0,0,0.1); }}
+.cell {{ background:white; display:flex; align-items:center; justify-content:center; font-weight:bold; user-select:none; }}
+.cell.active {{ background:black; color:white; }}
+.pan-mode .cell {{ pointer-events:none; cursor:grab; }}
+.grid-wrap.pan-active {{ cursor:grab; }}
+@media print {{ .toolbar{{display:none !important;}} .grid-wrap{{overflow:visible; padding:0; background:white;}} body{{background:white;}} .cell{{border:0.1pt solid #eee;}} }}
 </style>
 </head>
 <body>
 
-<div class="header-menu">
-    <select id="tool">
-        <option value="fill">⚫ SORT FELT</option>
-        <option value="X">❌ SYMBOL X</option>
-        <option value="O">⭕ SYMBOL O</option>
-        <option value="erase">⚪ RYDDER</option>
+<div class="toolbar">
+    <select id="mode">
+        <option value="fill">Fyld</option>
+        <option value="X">X</option>
+        <option value="O">O</option>
+        <option value="erase">Slet</option>
     </select>
-    <button id="panBtn" onclick="togglePan()">✋ PANORER</button>
-    <button class="btn-blue" onclick="exportData('png')">📸 GEM BILLEDE</button>
-    <button class="btn-green" onclick="exportData('pdf')">🖨️ PDF PRINT</button>
-    <button style="background: #ff3b30; color: white; border:none;" onclick="resetGrid()">🗑️ RYD ALT</button>
+    <button id="panBtn" onclick="togglePan()">Panorer</button>
+    <button class="primary" onclick="exportPNG()">💾 Gem PNG</button>
+    <button onclick="exportPDF()">🖨️ PDF</button>
+    <button onclick="clearGrid()">🗑️ Ryd</button>
 </div>
 
-<div class="canvas-container" id="container">
-    <canvas id="gridCanvas"></canvas>
+<div class="grid-wrap" id="view">
+    <div id="grid" class="grid"></div>
 </div>
 
 <script>
-const COLS = __COLS__;
-const ROWS = __ROWS__;
-const SIZE = __SIZE__;
-const IMPORT = __IMPORT__;
-const MARGIN = 100;
+const COLS={cols};
+const ROWS={rows};
+const SIZE={cell_size};
+const IMPORT={json.dumps(import_data)};
 
-const canvas = document.getElementById("gridCanvas");
-const ctx = canvas.getContext("2d");
-const container = document.getElementById("container");
+let isPan=false;
+const grid=document.getElementById("grid");
+const view=document.getElementById("view");
 
-let isPan = false;
-let gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
+grid.style.gridTemplateColumns=`repeat(${COLS}, ${SIZE}px)`;
 
-// Setup lærredets størrelse
-canvas.width = COLS * SIZE;
-canvas.height = ROWS * SIZE;
+// Generer celler
+for(let i=0;i<ROWS*COLS;i++){{
+    const cell=document.createElement("div");
+    cell.className="cell";
+    cell.style.width=SIZE+"px";
+    cell.style.height=SIZE+"px";
+    cell.style.fontSize=(SIZE*0.6)+"px";
+    cell.onclick=function(){{
+        if(isPan) return;
+        const mode=document.getElementById("mode").value;
+        if(mode==="fill"){{ cell.textContent=""; cell.classList.toggle("active"); }}
+        else if(mode==="erase"){{ cell.textContent=""; cell.classList.remove("active"); }}
+        else{{ cell.classList.remove("active"); cell.textContent=cell.textContent===mode?"":mode; }}
+    }};
+    grid.appendChild(cell);
+}}
 
-// Indlæs import
-if (IMPORT.length > 0) {
-    IMPORT.forEach(idx => {
-        const r = Math.floor(idx / COLS);
-        const c = idx % COLS;
-        gridData[r][c] = 'fill';
-    });
-}
+// Import billede
+IMPORT.forEach(idx=>{{
+    const r=Math.floor(idx/COLS);
+    const c=idx%COLS;
+    const cell=grid.children[r*COLS+c];
+    if(cell) cell.classList.add("active");
+}});
 
-function drawGrid() {
-    ctx.fillStyle = "white";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.strokeStyle = "#ddd"; // Gitter-farve
-    ctx.lineWidth = 1;
+function togglePan(){{
+    isPan=!isPan;
+    document.getElementById("panBtn").classList.toggle("active-tool");
+    grid.classList.toggle("pan-mode");
+    view.classList.toggle("pan-active");
+    view.style.touchAction=isPan?"auto":"none";
+}}
 
-    for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-            const x = c * SIZE;
-            const y = r * SIZE;
-            
-            // Tegn gitter (grids)
-            ctx.strokeRect(x, y, SIZE, SIZE);
-            
-            const cell = gridData[r][c];
-            if (cell === 'fill') {
-                ctx.fillStyle = "black";
-                ctx.fillRect(x, y, SIZE, SIZE);
-            } else if (cell === 'X' || cell === 'O') {
-                ctx.fillStyle = "black";
-                ctx.font = `bold ${SIZE * 0.7}px Arial`;
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillText(cell, x + SIZE/2, y + SIZE/2);
-            }
-        }
-    }
-}
+function clearGrid(){{
+    if(!confirm("Vil du slette alt?")) return;
+    document.querySelectorAll(".cell").forEach(c=>{{ c.textContent=""; c.classList.remove("active"); }});
+}}
 
-// Tegne-funktion
-canvas.addEventListener('mousedown', handleClick);
-canvas.addEventListener('touchstart', (e) => {
-    if(!isPan) {
-        e.preventDefault();
-        const touch = e.touches[0];
-        const mouseEvent = new MouseEvent("mousedown", {
-            clientX: touch.clientX,
-            clientY: touch.clientY
-        });
-        canvas.dispatchEvent(mouseEvent);
-    }
-}, {passive: false});
+function exportPNG(){{
+    const MARGIN=80;
+    const SCALE=3;
+    html2canvas(grid,{{backgroundColor:"#ffffff", scale:SCALE}}).then(c=>{{
+        const out=document.createElement("canvas");
+        out.width=c.width+MARGIN*2*SCALE;
+        out.height=c.height+MARGIN*2*SCALE;
+        const ctx=out.getContext("2d");
+        ctx.imageSmoothingEnabled=false;
+        ctx.fillStyle="#ffffff";
+        ctx.fillRect(0,0,out.width,out.height);
+        ctx.drawImage(c,MARGIN*SCALE,MARGIN*SCALE);
+        const link=document.createElement("a");
+        link.download="design-grid.png";
+        link.href=out.toDataURL("image/png");
+        link.click();
+    }});
+}}
 
-function handleClick(e) {
-    if (isPan) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const c = Math.floor(x / SIZE);
-    const r = Math.floor(y / SIZE);
-    
-    if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
-        const tool = document.getElementById("tool").value;
-        if (tool === "erase") gridData[r][c] = null;
-        else if (tool === "fill") gridData[r][c] = gridData[r][c] === 'fill' ? null : 'fill';
-        else gridData[r][c] = gridData[r][c] === tool ? null : tool;
-        drawGrid();
-    }
-}
-
-function togglePan() {
-    isPan = !isPan;
-    document.getElementById("panBtn").classList.toggle("active");
-    container.style.touchAction = isPan ? "auto" : "none";
-    canvas.style.cursor = isPan ? "grab" : "crosshair";
-}
-
-function resetGrid() {
-    if(confirm("Vil du slette alt mønster?")) {
-        gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
-        drawGrid();
-    }
-}
-
-function exportData(type) {
-    // Lav et high-res canvas til eksport med margen
-    const expCanvas = document.createElement("canvas");
-    const expCtx = expCanvas.getContext("2d");
-    const scale = 2;
-    const s = SIZE * scale;
-    const m = MARGIN * scale;
-
-    expCanvas.width = (COLS * s) + (m * 2);
-    expCanvas.height = (ROWS * s) + (m * 2);
-    
-    expCtx.fillStyle = "white";
-    expCtx.fillRect(0, 0, expCanvas.width, expCanvas.height);
-    
-    for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-            const x = c * s + m;
-            const y = r * s + m;
-            
-            expCtx.strokeStyle = "#bbb";
-            expCtx.lineWidth = 1;
-            expCtx.strokeRect(x, y, s, s);
-            
-            const cell = gridData[r][c];
-            if (cell === 'fill') {
-                expCtx.fillStyle = "black";
-                expCtx.fillRect(x, y, s, s);
-            } else if (cell === 'X' || cell === 'O') {
-                expCtx.fillStyle = "black";
-                expCtx.font = `bold ${s * 0.7}px Arial`;
-                expCtx.textAlign = "center";
-                expCtx.textBaseline = "middle";
-                expCtx.fillText(cell, x + s/2, y + s/2);
-            }
-        }
-    }
-
-    const dataUrl = expCanvas.toDataURL("image/png");
-    if (type === 'png') {
-        const a = document.createElement("a");
-        a.download = "moenster.png";
-        a.href = dataUrl;
-        a.click();
-    } else {
-        const win = window.open('', '_blank');
-        win.document.write(`<html><body style="margin:0; display:flex; justify-content:center; background:#fff;">
-            <img src="${dataUrl}" style="max-width:100%; height:auto;" onload="window.print();window.close();">
-            </body></html>`);
-    }
-}
-
-drawGrid();
+function exportPDF(){{
+    html2canvas(grid,{{backgroundColor:"#ffffff", scale:2}}).then(c=>{{
+        const win=window.open("");
+        const img=c.toDataURL("image/png");
+        win.document.write('<html><body style="margin:0; display:flex; justify-content:center;">');
+        win.document.write('<img src="'+img+'" style="width:100%; height:auto; margin:40px 0;">');
+        win.document.write('</body></html>');
+        win.document.close();
+        win.focus();
+        win.print();
+    }});
+}}
 </script>
 </body>
 </html>
 """
 
-final_html = (html_template
-    .replace("__COLS__", str(cols))
-    .replace("__ROWS__", str(rows))
-    .replace("__SIZE__", str(cell_size))
-    .replace("__IMPORT__", json.dumps(import_data))
-)
-
-components.html(final_html, height=1200, scrolling=False)
+components.html(html, height=1000, scrolling=False)
+st.caption("Ultimate Grid Designer – pan, pinch-zoom, import og pixel-perfekt eksport")
