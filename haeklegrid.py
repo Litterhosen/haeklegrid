@@ -19,14 +19,15 @@ with st.sidebar:
 
     st.divider()
     st.header("📥 Import")
-    uploaded_file = st.file_uploader("Konverter billede", type=["png", "jpg", "jpeg"])
+    uploaded_file = st.file_uploader("Konverter billede til net", type=["png", "jpg", "jpeg"])
     
     import_data = []
     if uploaded_file:
         img = Image.open(uploaded_file).convert("L").resize((cols, rows), Image.NEAREST)
         arr = np.array(img)
+        # Find index for mørke pixels (< 128)
         import_data = np.where(arr.flatten() < 128)[0].tolist()
-        st.success(f"Billede indlæst!")
+        st.success(f"Billede klar til indlæsning!")
 
 # ---------- HTML & JAVASCRIPT ----------
 html_template = """
@@ -55,16 +56,17 @@ body {
 
 .grid-wrap {
     flex: 1; overflow: auto;
-    padding: 20px; display: flex;
+    padding: 30px; display: flex;
     justify-content: center; align-items: flex-start;
     -webkit-overflow-scrolling: touch;
 }
 
+/* GITTER SETUP */
 .grid {
     display: grid;
     gap: 1px; 
-    background-color: #999;
-    border: 1px solid #666;
+    background-color: #999 !important; /* Gitter linje farve */
+    border: 1px solid #333;
     width: fit-content;
     background-color: white;
 }
@@ -72,13 +74,12 @@ body {
 .cell {
     background-color: white;
     display: flex; align-items: center; justify-content: center;
-    font-weight: bold; user-select: none;
+    font-weight: bold; user-select: none; cursor: pointer;
     min-width: var(--sz); min-height: var(--sz);
 }
 
 .cell.active { background-color: black !important; color: white !important; }
 
-/* KNAP STYLER */
 button, select {
     padding: 10px 14px; border-radius: 8px;
     border: 1px solid #ccc; background: white;
@@ -91,22 +92,16 @@ button, select {
 
 #loading {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: white; display: flex; justify-content: center;
-    align-items: center; z-index: 2000;
+    background: white; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; z-index: 2000;
 }
 
-/* PRINT OPSÆTNING: Tvinger gitteret frem på PDF */
 @media print {
     .toolbar { display: none !important; }
-    body { background: white; }
     .grid-wrap { overflow: visible; padding: 0; }
-    .grid { 
-        gap: 0; 
-        border: 0.5pt solid black;
-        background-color: transparent !important;
-    }
+    .grid { gap: 0; border: 1px solid black; }
     .cell { 
-        border: 0.2pt solid #000 !important; /* Tvinger gitterlinjer på PDF */
+        border: 0.1pt solid black !important;
         -webkit-print-color-adjust: exact; 
         print-color-adjust: exact; 
     }
@@ -115,7 +110,10 @@ button, select {
 </head>
 <body>
 
-<div id="loading">Genererer grid...</div>
+<div id="loading">
+    <div>Bygger gitter...</div>
+    <div style="font-size: 12px; color: #666; margin-top: 10px;">Dette kan tage et øjeblik ved store mønstre</div>
+</div>
 
 <div class="toolbar">
     <select id="mode">
@@ -125,7 +123,7 @@ button, select {
         <option value="erase">⚪ Slet</option>
     </select>
     <button id="panBtn" onclick="togglePan()">✋ Panorer</button>
-    <button class="btn-png" onclick="exportPNG()">📸 Kamerarulle (PNG)</button>
+    <button class="btn-png" onclick="exportPNG()">📸 Gem PNG</button>
     <button class="btn-svg" onclick="exportSVG()">📐 SVG</button>
     <button onclick="window.print()">🖨️ PDF</button>
     <button onclick="clearGrid()">🗑️ Ryd</button>
@@ -147,11 +145,13 @@ const grid = document.getElementById("grid");
 grid.style.setProperty('--sz', SIZE + "px");
 grid.style.gridTemplateColumns = `repeat(${COLS}, ${SIZE}px)`;
 
+// Effektiv generering af celler
 function generateGrid() {
     const fragment = document.createDocumentFragment();
     const importSet = new Set(IMPORT_DATA);
+    const total = ROWS * COLS;
 
-    for (let i = 0; i < ROWS * COLS; i++) {
+    for (let i = 0; i < total; i++) {
         const cell = document.createElement("div");
         cell.className = "cell";
         cell.style.width = SIZE + "px";
@@ -180,16 +180,18 @@ function generateGrid() {
     document.getElementById("loading").style.display = "none";
 }
 
+// Start process
 setTimeout(generateGrid, 50);
 
 function togglePan() {
     isPanMode = !isPanMode;
     document.getElementById("panBtn").classList.toggle("btn-active");
+    // Ved panorerings-tilstand tillader vi touch-navigation
     document.getElementById("view").style.touchAction = isPanMode ? "auto" : "none";
 }
 
 function clearGrid() {
-    if (confirm("Ryd alt?")) {
+    if (confirm("Vil du rydde hele pladen?")) {
         document.querySelectorAll(".cell").forEach(c => {
             c.textContent = "";
             c.classList.remove("active");
@@ -197,38 +199,33 @@ function clearGrid() {
     }
 }
 
-// PNG EKSPORT
 function exportPNG() {
     html2canvas(grid, { backgroundColor: "#ffffff", scale: 2 }).then(canvas => {
         const link = document.createElement("a");
-        link.download = "moenster.png";
+        link.download = "moenster-grid.png";
         link.href = canvas.toDataURL("image/png");
         link.click();
     });
 }
 
-// SVG EKSPORT (Vektor)
 function exportSVG() {
-    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${COLS * SIZE}" height="${ROWS * SIZE}" viewBox="0 0 ${COLS * SIZE} ${ROWS * SIZE}">`;
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${COLS * SIZE}" height="${ROWS * SIZE}">`;
     svg += `<rect width="100%" height="100%" fill="white"/>`;
-    
     const cells = document.querySelectorAll('.cell');
     cells.forEach((cell, i) => {
-        const r = Math.floor(i / COLS);
-        const c = i % COLS;
-        const x = c * SIZE;
-        const y = r * SIZE;
-        
-        // Tegn ramme (grid)
-        svg += `<rect x="${x}" y="${y}" width="${SIZE}" height="${SIZE}" fill="none" stroke="#ccc" stroke-width="0.5"/>`;
-        
-        // Tegn indhold
-        if (cell.classList.contains('active')) {
-            svg += `<rect x="${x}" y="${y}" width="${SIZE}" height="${SIZE}" fill="black"/>`;
-        } else if (cell.textContent) {
-            svg += `<text x="${x + SIZE/2}" y="${y + SIZE/2 + SIZE*0.2}" font-family="Arial" font-size="${SIZE*0.7}" text-anchor="middle" fill="black">${cell.textContent}</text>`;
+        if (cell.classList.contains('active') || cell.textContent) {
+            const x = (i % COLS) * SIZE;
+            const y = Math.floor(i / COLS) * SIZE;
+            if (cell.classList.contains('active')) {
+                svg += `<rect x="${x}" y="${y}" width="${SIZE}" height="${SIZE}" fill="black"/>`;
+            } else {
+                svg += `<text x="${x + SIZE/2}" y="${y + SIZE/2 + SIZE*0.25}" font-family="Arial" font-size="${SIZE*0.7}" text-anchor="middle">${cell.textContent}</text>`;
+            }
         }
     });
+    // Gitterlinjer i SVG
+    for(let i=0; i<=COLS; i++) svg += `<line x1="${i*SIZE}" y1="0" x2="${i*SIZE}" y2="${ROWS*SIZE}" stroke="#ccc" stroke-width="0.5"/>`;
+    for(let i=0; i<=ROWS; i++) svg += `<line x1="0" y1="${i*SIZE}" x2="${COLS*SIZE}" y2="${i*SIZE}" stroke="#ccc" stroke-width="0.5"/>`;
     
     svg += "</svg>";
     const blob = new Blob([svg], {type: 'image/svg+xml'});
@@ -243,6 +240,7 @@ function exportSVG() {
 </html>
 """
 
+# Indsæt alle data sikkert
 final_html = (html_template
     .replace("__COLS__", str(cols))
     .replace("__ROWS__", str(rows))
