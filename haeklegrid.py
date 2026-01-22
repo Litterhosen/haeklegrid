@@ -28,8 +28,8 @@ html_code = """
     .btn-blue { background: #3498db; color: white; border: none; }
     .btn-green { background: #27ae60; color: white; border: none; }
     .active-tool { background: #f1c40f !important; color: black !important; }
-    .viewport { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; background: #34495e; touch-action: none; }
-    canvas { background: white; box-shadow: 0 0 30px rgba(0,0,0,0.5); transform-origin: 0 0; image-rendering: -moz-crisp-edges; image-rendering: pixelated; }
+    .viewport { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; background: #34495e; touch-action: none; padding: 20px; }
+    canvas { background: white; box-shadow: 0 0 30px rgba(0,0,0,0.5); transform-origin: 0 0; }
 </style>
 </head>
 <body>
@@ -65,7 +65,7 @@ html_code = """
 </div>
 
 <script>
-    let COLS, ROWS, SIZE = 25, OFFSET = 35;
+    let COLS, ROWS, SIZE = 25, OFFSET = 40;
     let gridData = [], history = [], redoStack = [];
     let isPan = false, scale = 1.0;
     const canvas = document.getElementById('c'), ctx = canvas.getContext('2d'), vp = document.getElementById('vp');
@@ -90,12 +90,9 @@ html_code = """
     function drawOnContext(targetCtx, s, off, isExport = false) {
         const w = (COLS * s) + off;
         const h = (ROWS * s) + off;
-        
         targetCtx.fillStyle = "white";
         targetCtx.fillRect(0, 0, w, h);
         
-        targetCtx.font = `${off * 0.4}px Arial`;
-        targetCtx.fillStyle = "#888";
         targetCtx.textAlign = "center";
         targetCtx.textBaseline = "middle";
 
@@ -104,24 +101,46 @@ html_code = """
                 const x = c * s + off;
                 const y = r * s + off;
                 
-                // Tal (1,1 i øverste venstre hjørne)
-                if (r === 0 && (c + 1) % 5 === 0) targetCtx.fillText(c + 1, x + s/2, off/2);
-                if (c === 0 && (r + 1) % 5 === 0) targetCtx.fillText(r + 1, off/2, y + s/2);
-                
+                // Tegn tal i margenen
+                if (r === 0) {
+                    const colNum = c + 1;
+                    if (colNum === 1 || colNum % 5 === 0) {
+                        targetCtx.font = (colNum % 10 === 0) ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
+                        targetCtx.fillStyle = (colNum % 10 === 0) ? "#333" : "#888";
+                        targetCtx.fillText(colNum, x + s/2, off/2);
+                    }
+                }
+                if (c === 0) {
+                    const rowNum = r + 1;
+                    if (rowNum === 1 || rowNum % 5 === 0) {
+                        targetCtx.font = (rowNum % 10 === 0) ? `bold ${off*0.35}px Arial` : `${off*0.3}px Arial`;
+                        targetCtx.fillStyle = (rowNum % 10 === 0) ? "#333" : "#888";
+                        targetCtx.fillText(rowNum, off/2, y + s/2);
+                    }
+                }
+
+                // Gitterlinjer med specifikke markeringer for 5 og 10
                 targetCtx.beginPath();
-                targetCtx.strokeStyle = ((r+1)%5===0 || (c+1)%5===0) ? "#999" : "#ddd";
-                targetCtx.lineWidth = isExport ? 1.5 : 1;
+                if ((r + 1) % 10 === 0 || (c + 1) % 10 === 0) {
+                    targetCtx.strokeStyle = "#555"; // Hver 10. (mørkest)
+                    targetCtx.lineWidth = isExport ? 2 : 1.5;
+                } else if ((r + 1) % 5 === 0 || (c + 1) % 5 === 0) {
+                    targetCtx.strokeStyle = "#999"; // Hver 5. (mellem)
+                    targetCtx.lineWidth = isExport ? 1.5 : 1;
+                } else {
+                    targetCtx.strokeStyle = "#ddd"; // Standard
+                    targetCtx.lineWidth = 1;
+                }
                 targetCtx.strokeRect(x, y, s, s);
                 
                 const val = gridData[r][c];
                 if (val === 'fill') {
                     targetCtx.fillStyle = "black";
-                    targetCtx.fillRect(x, y, s, s);
+                    targetCtx.fillRect(x + 0.5, y + 0.5, s - 1, s - 1);
                 } else if (val) {
                     targetCtx.fillStyle = "black";
                     targetCtx.font = `bold ${s * 0.6}px Arial`;
                     targetCtx.fillText(val, x + s/2, y + s/2);
-                    targetCtx.font = `${off * 0.4}px Arial`;
                 }
             }
         }
@@ -129,39 +148,23 @@ html_code = """
 
     function draw() { drawOnContext(ctx, SIZE, OFFSET, false); }
 
-    // Eksport funktion med høj opløsning og korrekte proportioner
     function exportSmart(type) {
-        const exportScale = 2; // Gør billedet dobbelt så skarpt
+        const exportScale = 2;
         const s = SIZE * exportScale;
         const off = OFFSET * exportScale;
-        
         const out = document.createElement('canvas');
-        out.width = (COLS * s) + off + (20 * exportScale); // ekstra margen
-        out.height = (ROWS * s) + off + (20 * exportScale);
-        const oCtx = out.getContext('2d');
-        
-        drawOnContext(oCtx, s, off, true);
-        
+        out.width = (COLS * s) + off;
+        out.height = (ROWS * s) + off;
+        drawOnContext(out.getContext('2d'), s, off, true);
         const url = out.toDataURL("image/png", 1.0);
-        
         if(type === 'png') {
-            const a = document.createElement('a');
-            a.download = "grid-design-sharp.png"; a.href = url; a.click();
+            const a = document.createElement('a'); a.download = "crochet-pattern-sharp.png"; a.href = url; a.click();
         } else {
             const w = window.open();
-            // PDF fix: ingen stræk, centreret billede
-            w.document.write(`
-                <html>
-                <body style="margin:0; padding:40px; background:#fff; display:flex; justify-content:center;">
-                    <img src="${url}" style="max-width:100%; height:auto; object-fit:contain; box-shadow: 0 0 10px #ccc;">
-                    <script>setTimeout(() => { window.print(); }, 500);<\\/script>
-                </body>
-                </html>
-            `);
+            w.document.write(`<html><body style="margin:0;padding:20px;display:flex;justify-content:center;background:#fff;"><img src="${url}" style="max-width:100%;height:auto;object-fit:contain;"><script>setTimeout(()=>window.print(),500);<\\/script></body></html>`);
         }
     }
 
-    // Touch/Pointer logik
     let isDown = false, evCache = [], prevDiff = -1;
     canvas.addEventListener('pointerdown', e => {
         if (isPan) { isDown = true; return; }
@@ -174,15 +177,13 @@ html_code = """
         if (evCache.length < 2) prevDiff = -1;
     });
     canvas.addEventListener('pointermove', e => {
-        if (isPan && isDown) {
-            vp.scrollLeft -= e.movementX; vp.scrollTop -= e.movementY; return;
-        }
+        if (isPan && isDown) { vp.scrollLeft -= e.movementX; vp.scrollTop -= e.movementY; return; }
         if (e.pointerType === 'touch' && evCache.length === 2) {
             const index = evCache.findIndex(ev => ev.pointerId === e.pointerId);
             if (index > -1) evCache[index] = e;
             const curDiff = Math.hypot(evCache[0].clientX - evCache[1].clientX, evCache[0].clientY - evCache[1].clientY);
             if (prevDiff > 0) {
-                scale = Math.min(Math.max(0.2, scale * (curDiff / prevDiff)), 5);
+                scale = Math.min(Math.max(0.1, scale * (curDiff / prevDiff)), 5);
                 canvas.style.transform = `scale(${scale})`;
             }
             prevDiff = curDiff;
@@ -192,9 +193,8 @@ html_code = """
     function handleAction(e) {
         if (evCache.length >= 2) return;
         const rect = canvas.getBoundingClientRect();
-        const gridC = Math.floor(( (e.clientX - rect.left) / scale - OFFSET) / SIZE);
-        const gridR = Math.floor(( (e.clientY - rect.top) / scale - OFFSET) / SIZE);
-
+        const gridC = Math.floor(((e.clientX - rect.left) / scale - OFFSET) / SIZE);
+        const gridR = Math.floor(((e.clientY - rect.top) / scale - OFFSET) / SIZE);
         if (gridR >= 0 && gridR < ROWS && gridC >= 0 && gridC < COLS) {
             saveHistory();
             const mode = document.getElementById('mode').value;
@@ -205,10 +205,7 @@ html_code = """
         }
     }
 
-    function togglePan() {
-        isPan = !isPan;
-        document.getElementById('panBtn').classList.toggle('active-tool');
-    }
+    function togglePan() { isPan = !isPan; document.getElementById('panBtn').classList.toggle('active-tool'); }
 
     document.getElementById('imgInput').onchange = function(e) {
         const reader = new FileReader();
@@ -216,10 +213,8 @@ html_code = """
             const img = new Image();
             img.onload = function() {
                 saveHistory();
-                const tCanvas = document.createElement('canvas');
-                tCanvas.width = COLS; tCanvas.height = ROWS;
-                const tCtx = tCanvas.getContext('2d');
-                tCtx.drawImage(img, 0, 0, COLS, ROWS);
+                const tCanvas = document.createElement('canvas'); tCanvas.width = COLS; tCanvas.height = ROWS;
+                const tCtx = tCanvas.getContext('2d'); tCtx.drawImage(img, 0, 0, COLS, ROWS);
                 const pix = tCtx.getImageData(0, 0, COLS, ROWS).data;
                 for(let i=0; i<pix.length; i+=4) {
                     const avg = (pix[i]+pix[i+1]+pix[i+2])/3;
