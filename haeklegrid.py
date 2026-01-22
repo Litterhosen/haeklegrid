@@ -79,7 +79,8 @@ let isPan=false;
 const grid=document.getElementById("grid");
 const view=document.getElementById("view");
 
-grid.style.gridTemplateColumns=`repeat(${COLS}, ${SIZE}px)`;
+// Sæt grid kolonner korrekt
+grid.style.gridTemplateColumns = "repeat(" + COLS + ", " + SIZE + "px)";
 
 // Generer celler
 for(let i=0;i<ROWS*COLS;i++){{
@@ -119,6 +120,7 @@ function clearGrid(){{
     document.querySelectorAll(".cell").forEach(c=>{{ c.textContent=""; c.classList.remove("active"); }});
 }}
 
+// Pixel-perfekt PNG med margin
 function exportPNG(){{
     const MARGIN=80;
     const SCALE=3;
@@ -138,6 +140,7 @@ function exportPNG(){{
     }});
 }}
 
+// PDF / print med margin
 function exportPDF(){{
     html2canvas(grid,{{backgroundColor:"#ffffff", scale:2}}).then(c=>{{
         const win=window.open("");
