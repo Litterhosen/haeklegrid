@@ -6,7 +6,7 @@ import json
 
 st.set_page_config(page_title="Grid Designer", layout="wide", initial_sidebar_state="collapsed")
 
-# Tvinger Streamlit UI til at forsvinde HELT så der er plads til din menu
+# Tvinger Streamlit UI til at forsvinde HELT
 st.markdown("""
     <style>
     header, footer, .stDeployButton {display:none !important;}
@@ -27,7 +27,8 @@ with st.sidebar:
         img = Image.open(uploaded).convert("L").resize((cols, rows), Image.NEAREST)
         import_data = np.where(np.array(img).flatten() < 128)[0].tolist()
 
-html_code = """
+# Navngivet 'html_template' for at undgå fejl
+html_template = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -35,7 +36,6 @@ html_code = """
 <style>
     body { margin: 0; font-family: sans-serif; background: #ccc; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
     
-    /* MENU - Fastlåst i toppen */
     .menu-bar { 
         background: #333; color: white; padding: 10px; 
         display: flex; gap: 10px; justify-content: center; align-items: center;
@@ -51,16 +51,7 @@ html_code = """
     button, select { padding: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; }
     .btn-green { background: #28a745; color: white; }
     .btn-blue { background: #007aff; color: white; }
-    .btn-pan.active { background: #ff9500; color: white; }
-    
-    /* Sikrer at vi kun printer mønsteret */
-    @media print {
-        .menu-bar { display: none !important; }
-        body { background: white; }
-        .view-area { padding: 0; overflow: visible; }
-        .grid { gap: 0; border: 1px solid black; }
-        .cell { border: 0.1pt solid black !important; }
-    }
+    .btn-pan.active { background: #ff9500 !important; color: white !important; }
 </style>
 </head>
 <body>
@@ -95,6 +86,7 @@ grid.style.gridTemplateColumns = `repeat(${COLS}, ${SIZE}px)`;
 for (let i = 0; i < ROWS * COLS; i++) {
     const c = document.createElement("div");
     c.className = "cell";
+    c.style.fontSize = (SIZE * 0.7) + "px";
     if (IMPORT.includes(i)) c.classList.add("active");
     
     c.onclick = function() {
@@ -114,16 +106,18 @@ function togglePan() {
 }
 
 function doExport(type) {
-    const scale = 2;
-    const margin = 100;
+    const scale = 2; // Høj opløsning
+    const margin = 120; // Din ønskede margen
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     const s = SIZE * scale;
 
     canvas.width = (COLS * s) + (margin * 2);
     canvas.height = (ROWS * s) + (margin * 2);
+    
+    // Hvid baggrund (margen)
     ctx.fillStyle = "white";
-    ctx.fillRect(0,0,canvas.width, canvas.height);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     const cells = grid.children;
     for(let i=0; i<cells.length; i++) {
@@ -135,6 +129,7 @@ function doExport(type) {
             ctx.fillRect(x, y, s, s);
         } else {
             ctx.strokeStyle = "#ccc";
+            ctx.lineWidth = 1;
             ctx.strokeRect(x, y, s, s);
             if(cells[i].textContent) {
                 ctx.fillStyle = "black";
@@ -152,7 +147,9 @@ function doExport(type) {
         a.download = "moenster.png"; a.href = data; a.click();
     } else {
         const w = window.open();
-        w.document.write(`<img src="${data}" style="width:100%" onload="window.print();window.close();">`);
+        w.document.write(`<html><body style="margin:0; display:flex; justify-content:center;">
+            <img src="${data}" style="max-width:100%; height:auto;" onload="window.print();window.close();">
+            </body></html>`);
     }
 }
 </script>
@@ -160,5 +157,12 @@ function doExport(type) {
 </html>
 """
 
-final_html = html.replace("__COLS__", str(cols)).replace("__ROWS__", str(rows)).replace("__SIZE__", str(cell_size)).replace("__IMPORT__", json.dumps(import_data))
+# Her blev 'html' rettet til 'html_template'
+final_html = (html_template
+    .replace("__COLS__", str(cols))
+    .replace("__ROWS__", str(rows))
+    .replace("__SIZE__", str(cell_size))
+    .replace("__IMPORT__", json.dumps(import_data))
+)
+
 components.html(final_html, height=1200, scrolling=False)
