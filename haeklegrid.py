@@ -17,37 +17,44 @@ html_code = """
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
-    body { margin: 0; font-family: sans-serif; background: #2c3e50; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    body { margin: 0; font-family: sans-serif; background: #2c3e50; height: 100vh; overflow: hidden; }
+    
+    /* FAST MENU - forsvinder ikke ved zoom */
     .toolbar { 
-        background: #ecf0f1; padding: 5px; display: flex; flex-wrap: wrap; gap: 5px; 
-        justify-content: center; align-items: center; border-bottom: 2px solid #bdc3c7; z-index: 100;
+        position: fixed; top: 0; left: 0; right: 0;
+        background: rgba(236, 240, 241, 0.95); 
+        padding: 5px; display: flex; flex-wrap: wrap; gap: 4px; 
+        justify-content: center; align-items: center; 
+        border-bottom: 2px solid #bdc3c7; z-index: 1000;
+        transition: transform 0.3s ease;
     }
-    .group { display: flex; gap: 4px; align-items: center; border: 1px solid #ddd; padding: 4px; border-radius: 6px; background: #fff; }
-    button, select, input { padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; cursor: pointer; font-size: 11px; height: 36px; }
+    .toolbar.minimized { transform: translateY(-85%); }
+    
+    .toggle-ui {
+        position: absolute; bottom: -20px; right: 10px;
+        background: #bdc3c7; border: none; border-radius: 0 0 5px 5px;
+        padding: 2px 10px; cursor: pointer; font-size: 12px;
+    }
+
+    .group { display: flex; gap: 3px; align-items: center; border: 1px solid #ddd; padding: 3px; border-radius: 6px; background: #fff; }
+    button, select, input { padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; cursor: pointer; font-size: 10px; height: 32px; }
     .btn-blue { background: #3498db; color: white; border: none; }
     .btn-green { background: #27ae60; color: white; border: none; }
     .active-tool { background: #f1c40f !important; color: black !important; }
     
-    .viewport { flex: 1; overflow: auto; background: #34495e; display: block; touch-action: none; }
+    .viewport { width: 100vw; height: 100vh; overflow: auto; background: #34495e; touch-action: none; padding-top: 50px; }
     
-    /* BEVAR PIXEL KVALITET VED ZOOM */
     canvas { 
-        background: white; 
-        transform-origin: 0 0; 
-        display: block; 
-        image-rendering: optimizeSpeed;             /* Eldre browsers */
-        image-rendering: -moz-crisp-edges;          /* Firefox */
-        image-rendering: -webkit-optimize-contrast; /* Safari */
-        image-rendering: pixelated;                 /* Moderne browsers */
-        image-rendering: optimize-contrast;         /* CSS spec */
+        background: white; transform-origin: 0 0; display: block; 
+        image-rendering: pixelated; image-rendering: crisp-edges;
     }
 </style>
 </head>
 <body>
 
-<div class="toolbar">
+<div class="toolbar" id="toolbar">
     <div class="group">
-        <input type="number" id="rows" value="60" style="width:40px">x<input type="number" id="cols" value="60" style="width:40px">
+        <input type="number" id="rows" value="60" style="width:35px">x<input type="number" id="cols" value="60" style="width:35px">
         <button onclick="initGrid()">OK</button>
     </div>
     <div class="group">
@@ -55,20 +62,21 @@ html_code = """
         <button onclick="redo()">↪️</button>
     </div>
     <div class="group">
-        <select id="mode">
+        <select id="mode" style="width: 75px;">
             <option value="fill">⚫ SORT</option>
             <option value="X">❌ X</option>
             <option value="O">⭕ O</option>
             <option value="erase">⚪ SLET</option>
         </select>
-        <button id="panBtn" onclick="togglePan()">✋ PAN</button>
+        <button id="panBtn" onclick="togglePan()">✋</button>
     </div>
     <div class="group">
-        <input type="file" id="imgInput" accept="image/*" style="width:90px; font-size:9px;">
-        <button class="btn-blue" onclick="exportSmart('png')">📸 PNG</button>
-        <button class="btn-green" onclick="exportSmart('pdf')">🖨️ PDF</button>
+        <input type="file" id="imgInput" accept="image/*" style="width:70px; font-size:8px;">
+        <button class="btn-blue" onclick="exportSmart('png')">📸</button>
+        <button class="btn-green" onclick="exportSmart('pdf')">🖨️</button>
         <button onclick="resetCanvas()">🗑️</button>
     </div>
+    <button class="toggle-ui" onclick="document.getElementById('toolbar').classList.toggle('minimized')">🔼/🔽</button>
 </div>
 
 <div class="viewport" id="vp">
@@ -96,23 +104,15 @@ html_code = """
         canvas.width = (COLS * SIZE) + OFFSET;
         canvas.height = (ROWS * SIZE) + OFFSET;
         gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
-        
-        // Sikr pixel-skarphed på canvas context
         ctx.imageSmoothingEnabled = false;
         draw();
     }
 
     function drawOnContext(targetCtx, s, off, isExport = false) {
-        const w = targetCtx.canvas.width;
-        const h = targetCtx.canvas.height;
-        
-        // Hvis eksport, tilføj 40px ekstra hvid margen (Safe Zone)
-        const margin = isExport ? 40 : 0;
-        
+        const margin = isExport ? 50 : 0;
         targetCtx.imageSmoothingEnabled = false;
         targetCtx.fillStyle = "white";
-        targetCtx.fillRect(0, 0, w, h);
-        
+        targetCtx.fillRect(0, 0, targetCtx.canvas.width, targetCtx.canvas.height);
         targetCtx.textAlign = "center";
         targetCtx.textBaseline = "middle";
 
@@ -121,7 +121,6 @@ html_code = """
                 const x = c * s + off + margin;
                 const y = r * s + off + margin;
                 
-                // Tal i margenen
                 if (r === 0) {
                     const colNum = c + 1;
                     if (colNum === 1 || colNum % 5 === 0) {
@@ -139,17 +138,13 @@ html_code = """
                     }
                 }
 
-                // Gitterlinjer
                 targetCtx.beginPath();
                 if ((r + 1) % 10 === 0 || (c + 1) % 10 === 0) {
-                    targetCtx.strokeStyle = "#444"; 
-                    targetCtx.lineWidth = isExport ? 2 : 1.5;
+                    targetCtx.strokeStyle = "#444"; targetCtx.lineWidth = isExport ? 2 : 1.5;
                 } else if ((r + 1) % 5 === 0 || (c + 1) % 5 === 0) {
-                    targetCtx.strokeStyle = "#888";
-                    targetCtx.lineWidth = 1;
+                    targetCtx.strokeStyle = "#888"; targetCtx.lineWidth = 1;
                 } else {
-                    targetCtx.strokeStyle = "#ddd";
-                    targetCtx.lineWidth = 0.5;
+                    targetCtx.strokeStyle = "#ddd"; targetCtx.lineWidth = 0.5;
                 }
                 targetCtx.strokeRect(x, y, s, s);
                 
@@ -169,28 +164,21 @@ html_code = """
     function draw() { drawOnContext(ctx, SIZE, OFFSET, false); }
 
     function exportSmart(type) {
-        const exportScale = 2;
-        const s = SIZE * exportScale;
-        const off = OFFSET * exportScale;
-        const margin = 40 * exportScale; // Ekstra stor sikkerhedsmargen til mobiler
-        
+        const dpr = 2;
+        const s = SIZE * dpr, off = OFFSET * dpr, margin = 50 * dpr;
         const out = document.createElement('canvas');
         out.width = (COLS * s) + off + (margin * 2);
         out.height = (ROWS * s) + off + (margin * 2);
-        const oCtx = out.getContext('2d');
-        
-        drawOnContext(oCtx, s, off, true);
-        
+        drawOnContext(out.getContext('2d'), s, off, true);
         const url = out.toDataURL("image/png", 1.0);
         if(type === 'png') {
-            const a = document.createElement('a'); a.download = "moenster-pixel-perfect.png"; a.href = url; a.click();
+            const a = document.createElement('a'); a.download = "design.png"; a.href = url; a.click();
         } else {
             const w = window.open();
-            w.document.write(`<html><body style="margin:0;padding:20px;display:flex;justify-content:center;background:#fff;"><img src="${url}" style="max-width:98%;height:auto;object-fit:contain;"><script>setTimeout(()=>window.print(),500);<\\/script></body></html>`);
+            w.document.write(`<html><body style="margin:0;padding:20px;display:flex;justify-content:center;background:#fff;"><img src="${url}" style="max-width:98%;height:auto;"><script>setTimeout(()=>window.print(),600);<\\/script></body></html>`);
         }
     }
 
-    // Zoom og Input håndtering
     let isDown = false, evCache = [], prevDiff = -1;
     canvas.addEventListener('pointerdown', e => {
         if (isPan) { isDown = true; return; }
@@ -209,7 +197,7 @@ html_code = """
             if (index > -1) evCache[index] = e;
             const curDiff = Math.hypot(evCache[0].clientX - evCache[1].clientX, evCache[0].clientY - evCache[1].clientY);
             if (prevDiff > 0) {
-                scale = Math.min(Math.max(0.1, scale * (curDiff / prevDiff)), 8); // Zoom op til 8x
+                scale = Math.min(Math.max(0.1, scale * (curDiff / prevDiff)), 8);
                 canvas.style.transform = `scale(${scale})`;
             }
             prevDiff = curDiff;
@@ -219,10 +207,8 @@ html_code = """
     function handleAction(e) {
         if (evCache.length >= 2) return;
         const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / scale;
-        const y = (e.clientY - rect.top) / scale;
-        const gridC = Math.floor((x - OFFSET) / SIZE);
-        const gridR = Math.floor((y - OFFSET) / SIZE);
+        const gridC = Math.floor(((e.clientX - rect.left) / scale - OFFSET) / SIZE);
+        const gridR = Math.floor(((e.clientY - rect.top) / scale - OFFSET) / SIZE);
         if (gridR >= 0 && gridR < ROWS && gridC >= 0 && gridC < COLS) {
             saveHistory();
             const mode = document.getElementById('mode').value;
