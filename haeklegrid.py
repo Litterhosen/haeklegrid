@@ -10,12 +10,21 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Skjul Streamlit standard elementer helt
+st.markdown("""
+    <style>
+    header, footer, .stDeployButton {display:none !important;}
+    [data-testid="stHeader"] {display:none !important;}
+    .main .block-container {padding: 0px !important;}
+    </style>
+    """, unsafe_allow_html=True)
+
 # ---------- SIDEBAR ----------
 with st.sidebar:
     st.header("Indstillinger")
-    cols = st.number_input("Kolonner", min_value=120, max_value=400, value=120)
-    rows = st.number_input("Rækker", min_value=120, max_value=400, value=120)
-    cell_size = st.slider("Zoom (px per felt)", 5, 60, 20)
+    cols = st.number_input("Kolonner", min_value=5, max_value=400, value=120)
+    rows = st.number_input("Rækker", min_value=5, max_value=400, value=120)
+    cell_size = st.slider("Zoom (feltstørrelse)", 5, 60, 20)
 
     st.divider()
     uploaded = st.file_uploader("Importér billede", type=["png", "jpg", "jpeg"])
@@ -24,142 +33,208 @@ with st.sidebar:
     if uploaded:
         img = Image.open(uploaded).convert("L").resize((cols, rows), Image.NEAREST)
         arr = np.array(img)
-        import_data = np.argwhere(arr < 128).flatten().tolist()
+        import_data = np.where(arr.flatten() < 128)[0].tolist()
 
-    st.write("Klik udenfor panelet for at lukke.")
-
-# ---------- HTML ----------
-html = f"""
+# ---------- HTML & JAVASCRIPT ----------
+html_code = f"""
 <!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 <style>
-body {{ margin:0; background:#f2f2f2; font-family:-apple-system, Arial, sans-serif; display:flex; flex-direction:column; height:100vh; }}
-.toolbar {{ position:sticky; top:0; background:white; padding:10px; border-bottom:1px solid #ddd; display:flex; flex-wrap:wrap; gap:8px; z-index:1000; justify-content:center; }}
-button, select {{ padding:10px 14px; border-radius:8px; border:1px solid #ccc; background:white; cursor:pointer; font-weight:600; }}
-button.primary {{ background:#007aff; color:white; border:none; }}
-button.active-tool {{ background:#5856d6; color:white; }}
-.grid-wrap {{ flex:1; overflow:auto; -webkit-overflow-scrolling: touch; padding:20px; background:#e5e5e5; touch-action: none; display:flex; justify-content:center; align-items:flex-start; }}
-.grid {{ display:grid; gap:1px; background:white; box-shadow:0 0 10px rgba(0,0,0,0.1); }}
-.cell {{ background:white; display:flex; align-items:center; justify-content:center; font-weight:bold; user-select:none; }}
-.cell.active {{ background:black; color:white; }}
-.pan-mode .cell {{ pointer-events:none; cursor:grab; }}
-.grid-wrap.pan-active {{ cursor:grab; }}
-@media print {{ .toolbar{{display:none !important;}} .grid-wrap{{overflow:visible; padding:0; background:white;}} body{{background:white;}} .cell{{border:0.1pt solid #eee;}} }}
+body {{ margin: 0; background: #222; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }}
+
+.toolbar {{ 
+    position: sticky; top: 0; background: #fff; padding: 10px; 
+    border-bottom: 2px solid #000; display: flex; flex-wrap: wrap; 
+    gap: 8px; z-index: 1000; justify-content: center; 
+}}
+
+button, select {{ padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; background: white; cursor: pointer; font-weight: 600; }}
+button.primary {{ background: #007aff; color: white; border: none; }}
+button.active-tool {{ background: #ff9500 !important; color: white !important; }}
+
+.grid-wrap {{ 
+    flex: 1; overflow: auto; padding: 40px; 
+    background: #444; display: flex; justify-content: center; align-items: flex-start;
+    -webkit-overflow-scrolling: touch;
+}}
+
+canvas {{ 
+    background: white; 
+    box-shadow: 0 0 20px rgba(0,0,0,0.5); 
+    display: block;
+    cursor: crosshair;
+}}
+
+.pan-active canvas {{ cursor: grab; }}
 </style>
 </head>
 <body>
 
 <div class="toolbar">
     <select id="mode">
-        <option value="fill">Fyld</option>
-        <option value="X">X</option>
-        <option value="O">O</option>
-        <option value="erase">Slet</option>
+        <option value="fill">⚫ Sort Felt</option>
+        <option value="X">❌ Symbol X</option>
+        <option value="O">⭕ Symbol O</option>
+        <option value="erase">⚪ Ryd felt</option>
     </select>
-    <button id="panBtn" onclick="togglePan()">Panorer</button>
-    <button class="primary" onclick="exportPNG()">💾 Gem PNG</button>
-    <button onclick="exportPDF()">🖨️ PDF</button>
-    <button onclick="clearGrid()">🗑️ Ryd</button>
+    <button id="panBtn" onclick="togglePan()">✋ Panorer</button>
+    <button class="primary" onclick="exportSmart('png')">📸 Gem PNG</button>
+    <button class="primary" style="background:#34c759" onclick="exportSmart('pdf')">🖨️ PDF</button>
+    <button onclick="clearGrid()">🗑️ Ryd alt</button>
 </div>
 
 <div class="grid-wrap" id="view">
-    <div id="grid" class="grid"></div>
+    <canvas id="gridCanvas"></canvas>
 </div>
 
 <script>
-const COLS={cols};
-const ROWS={rows};
-const SIZE={cell_size};
-const IMPORT={json.dumps(import_data)};
+const COLS = {cols};
+const ROWS = {rows};
+const SIZE = {cell_size};
+const IMPORT = {json.dumps(import_data)};
+const MARGIN = 100; // Margen til eksport
 
-let isPan=false;
-const grid=document.getElementById("grid");
-const view=document.getElementById("view");
+const canvas = document.getElementById("gridCanvas");
+const ctx = canvas.getContext("2d");
+const view = document.getElementById("view");
 
-// Sæt grid kolonner og dimensioner
-grid.style.gridTemplateColumns = "repeat(" + COLS + ", " + SIZE + "px)";
-grid.style.gridTemplateRows = "repeat(" + ROWS + ", " + SIZE + "px)";
+let isPan = false;
+let gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
 
-// Generer celler
-for(let r=0;r<ROWS;r++){{
-    for(let c=0;c<COLS;c++){{
-        const cell=document.createElement("div");
-        cell.className="cell";
-        cell.style.width=SIZE+"px";
-        cell.style.height=SIZE+"px";
-        cell.style.fontSize=(SIZE*0.6)+"px";
-        cell.onclick=function(){{
-            if(isPan) return;
-            const mode=document.getElementById("mode").value;
-            if(mode==="fill"){{ cell.textContent=""; cell.classList.toggle("active"); }}
-            else if(mode==="erase"){{ cell.textContent=""; cell.classList.remove("active"); }}
-            else{{ cell.classList.remove("active"); cell.textContent=cell.textContent===mode?"":mode; }}
-        }};
-        grid.appendChild(cell);
+// Initialiser størrelse
+canvas.width = COLS * SIZE;
+canvas.height = ROWS * SIZE;
+
+// Indlæs import data
+IMPORT.forEach(idx => {{
+    const r = Math.floor(idx / COLS);
+    const c = idx % COLS;
+    gridData[r][c] = 'fill';
+}});
+
+function draw() {{
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Tegn baggrund
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (let r = 0; r < ROWS; r++) {{
+        for (let c = 0; c < COLS; c++) {{
+            const x = c * SIZE;
+            const y = r * SIZE;
+            
+            // Tegn Grid (altid synligt)
+            ctx.strokeStyle = "#ddd";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, SIZE, SIZE);
+            
+            const cell = gridData[r][c];
+            if (cell === 'fill') {{
+                ctx.fillStyle = "black";
+                ctx.fillRect(x, y, SIZE, SIZE);
+            }} else if (cell === 'X' || cell === 'O') {{
+                ctx.fillStyle = "black";
+                ctx.font = `bold ${{SIZE * 0.7}}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(cell, x + SIZE/2, y + SIZE/2);
+            }}
+        }}
     }}
 }}
 
-// Import billede
-IMPORT.forEach(idx=>{{
-    const r=Math.floor(idx/COLS);
-    const c=idx%COLS;
-    const cell=grid.children[r*COLS+c];
-    if(cell) cell.classList.add("active");
+// Håndter klik/tegn
+canvas.addEventListener('mousedown', (e) => {{
+    if (isPan) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const c = Math.floor(x / SIZE);
+    const r = Math.floor(y / SIZE);
+    
+    if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {{
+        const mode = document.getElementById("mode").value;
+        if (mode === "erase") gridData[r][c] = null;
+        else if (mode === "fill") gridData[r][c] = gridData[r][c] === 'fill' ? null : 'fill';
+        else gridData[r][c] = gridData[r][c] === mode ? null : mode;
+        draw();
+    }}
 }});
 
-function togglePan(){{
-    isPan=!isPan;
+function togglePan() {{
+    isPan = !isPan;
     document.getElementById("panBtn").classList.toggle("active-tool");
-    grid.classList.toggle("pan-mode");
     view.classList.toggle("pan-active");
-    view.style.touchAction=isPan?"auto":"none";
+    view.style.touchAction = isPan ? "auto" : "none";
 }}
 
-function clearGrid(){{
-    if(!confirm("Vil du slette alt?")) return;
-    document.querySelectorAll(".cell").forEach(c=>{{ c.textContent=""; c.classList.remove("active"); }});
+function clearGrid() {{
+    if(confirm("Vil du rydde hele mønsteret?")) {{
+        gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
+        draw();
+    }}
 }}
 
-// Pixel-perfekt PNG med margin
-function exportPNG(){{
-    const MARGIN=80;
-    const SCALE=3;
-    html2canvas(grid,{{backgroundColor:"#ffffff", scale:SCALE}}).then(c=>{{
-        const out=document.createElement("canvas");
-        out.width=c.width+MARGIN*2*SCALE;
-        out.height=c.height+MARGIN*2*SCALE;
-        const ctx=out.getContext("2d");
-        ctx.imageSmoothingEnabled=false;
-        ctx.fillStyle="#ffffff";
-        ctx.fillRect(0,0,out.width,out.height);
-        ctx.drawImage(c,MARGIN*SCALE,MARGIN*SCALE);
-        const link=document.createElement("a");
-        link.download="design-grid.png";
-        link.href=out.toDataURL("image/png");
-        link.click();
-    }});
-}}
-
-// PDF / print med margin
-function exportPDF(){{
-    html2canvas(grid,{{backgroundColor:"#ffffff", scale:2}}).then(c=>{{
-        const win=window.open("");
-        const img=c.toDataURL("image/png");
-        win.document.write('<html><body style="margin:0; display:flex; justify-content:center;">');
-        win.document.write('<img src="'+img+'" style="width:100%; height:auto; margin:40px 0;">');
+// Eksport funktion der virker hver gang
+function exportSmart(type) {{
+    const scale = 2; // Højere opløsning til eksport
+    const s = SIZE * scale;
+    const m = MARGIN * scale;
+    
+    const out = document.createElement("canvas");
+    out.width = (COLS * s) + (m * 2);
+    out.height = (ROWS * s) + (m * 2);
+    const octx = out.getContext("2d");
+    
+    // Hvid baggrund (Margen)
+    octx.fillStyle = "white";
+    octx.fillRect(0, 0, out.width, out.height);
+    
+    for (let r = 0; r < ROWS; r++) {{
+        for (let c = 0; c < COLS; c++) {{
+            const x = c * s + m;
+            const y = r * s + m;
+            
+            octx.strokeStyle = "#ccc";
+            octx.lineWidth = 1;
+            octx.strokeRect(x, y, s, s);
+            
+            const cell = gridData[r][c];
+            if (cell === 'fill') {{
+                octx.fillStyle = "black";
+                octx.fillRect(x, y, s, s);
+            }} else if (cell === 'X' || cell === 'O') {{
+                octx.fillStyle = "black";
+                octx.font = `bold ${{s * 0.7}}px Arial`;
+                octx.textAlign = "center";
+                octx.textBaseline = "middle";
+                octx.fillText(cell, x + s/2, y + s/2);
+            }}
+        }}
+    }}
+    
+    const dataUrl = out.toDataURL("image/png");
+    if (type === 'png') {{
+        const a = document.createElement("a");
+        a.download = "design.png";
+        a.href = dataUrl;
+        a.click();
+    }} else {{
+        const win = window.open('', '_blank');
+        win.document.write('<html><body style="margin:0;display:flex;justify-content:center;background:#fff;">');
+        win.document.write('<img src="' + dataUrl + '" style="max-width:100%; height:auto;" onload="window.print();window.close();">');
         win.document.write('</body></html>');
-        win.document.close();
-        win.focus();
-        win.print();
-    }});
+    }}
 }}
+
+draw();
 </script>
 </body>
 </html>
 """
 
-components.html(html, height=1000, scrolling=False)
-st.caption("Ultimate Grid Designer – nu vises grid, pan, import og pixel-perfekt eksport")
+components.html(html_code, height=1100, scrolling=False)
+st.caption("Grid Designer Pro – Panorer, tegn og eksportér med sikkerhedsmargin.")
