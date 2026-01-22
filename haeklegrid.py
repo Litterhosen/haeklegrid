@@ -1,165 +1,177 @@
+import streamlit as st
+import streamlit.components.v1 as components
+import numpy as np
+
+st.set_page_config(
+    page_title="Grid Designer",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# ---------- SIDEBAR ----------
+with st.sidebar:
+    st.header("Indstillinger")
+
+    cols = st.number_input("Kolonner", min_value=120, max_value=400, value=120)
+    rows = st.number_input("Rækker", min_value=120, max_value=400, value=120)
+    cell_size = st.slider("Zoom (feltstørrelse)", 10, 60, 20)
+
+    st.divider()
+    st.write("Klik udenfor panelet for at lukke")
+
+# ---------- GRID DATA ----------
+grid_data = np.zeros((rows, cols), dtype=int)
+
+# ---------- HTML ----------
+html = """
 <!DOCTYPE html>
-<html lang="da">
+<html>
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Safe Grid Editor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
 <style>
-  body { margin: 0; font-family: system-ui, sans-serif; background: #f5f5f5; }
-  header {
-    display: flex; align-items: center; gap: 8px;
-    padding: 8px 12px; background: #222; color: #fff;
-  }
-  header button { padding: 6px 10px; }
+body {
+    margin: 0;
+    padding: 10px;
+    background: #f2f2f2;
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
 
-  #app { display: flex; height: calc(100vh - 48px); }
+.toolbar {
+    position: sticky;
+    top: 0;
+    background: white;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    display: flex;
+    gap: 8px;
+    z-index: 1000;
+}
 
-  #overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: none; z-index: 10;
-  }
+button, select {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: none;
+    background: #ddd;
+    cursor: pointer;
+    font-size: 14px;
+}
 
-  #drawer {
-    position: fixed; top: 48px; left: 0; bottom: 0;
-    width: 260px; background: #fff; padding: 12px;
-    box-shadow: 2px 0 10px rgba(0,0,0,0.2);
-    transform: translateX(-100%);
-    transition: transform 0.25s ease;
-    z-index: 11;
-  }
+button.primary {
+    background: #007aff;
+    color: white;
+}
 
-  #drawer.open { transform: translateX(0); }
-  #overlay.show { display: block; }
+.grid-wrap {
+    overflow: auto;
+    max-width: 100vw;
+    max-height: 80vh;
+}
 
-  #canvasWrap {
-    flex: 1; overflow: auto; display: flex; justify-content: center; align-items: center;
-  }
+.grid {
+    display: grid;
+    background: #bbb;
+    gap: 1px;
+}
 
-  canvas { background: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.2); }
+.cell {
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    user-select: none;
+    cursor: pointer;
+}
+
+.cell.active {
+    background: black;
+    color: white;
+}
 </style>
 </head>
+
 <body>
 
-<header>
-  <button id="menuBtn">☰</button>
-  <button onclick="exportPNG()">⬇ PNG</button>
-  <span style="flex:1"></span>
-  <select id="tool">
-    <option value="fill">■</option>
-    <option value="cross">✖</option>
-    <option value="circle">○</option>
-    <option value="erase">🧽</option>
-  </select>
-</header>
+<div class="toolbar">
+    <select id="mode">
+        <option value="fill">Fill</option>
+        <option value="X">X</option>
+        <option value="O">O</option>
+        <option value="erase">Erase</option>
+    </select>
 
-<div id="overlay"></div>
-
-<div id="drawer">
-  <h3>Indstillinger</h3>
-  <label>Grid størrelse</label><br />
-  <input id="gridSize" type="number" value="120" min="120" max="400" />
-  <button onclick="resizeGrid()">Anvend</button>
-  <hr />
-  <button onclick="exportPNG()">Eksport PNG</button>
+    <button class="primary" onclick="exportPNG()">Export PNG</button>
+    <button onclick="clearGrid()">Clear</button>
 </div>
 
-<div id="app">
-  <div id="canvasWrap">
-    <canvas id="grid"></canvas>
-  </div>
+<div class="grid-wrap">
+    <div id="grid" class="grid"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>
-  var canvas = document.getElementById('grid');
-  var ctx = canvas.getContext('2d');
-  var size = 120;
-  var cell = 20;
-  var tool = 'fill';
-  var grid = [];
+const COLS = """ + str(cols) + """;
+const ROWS = """ + str(rows) + """;
+const SIZE = """ + str(cell_size) + """;
 
-  function initGrid() {
-    grid = [];
-    for (var y = 0; y < size; y++) {
-      var row = [];
-      for (var x = 0; x < size; x++) row.push(null);
-      grid.push(row);
-    }
-    canvas.width = size * cell;
-    canvas.height = size * cell;
-    draw();
-  }
+const grid = document.getElementById("grid");
+grid.style.gridTemplateColumns = "repeat(" + COLS + ", " + SIZE + "px)";
 
-  function draw() {
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.strokeStyle = '#ccc';
+for (let i = 0; i < ROWS * COLS; i++) {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.style.width = SIZE + "px";
+    cell.style.height = SIZE + "px";
 
-    for (var y = 0; y < size; y++) {
-      for (var x = 0; x < size; x++) {
-        ctx.strokeRect(x*cell, y*cell, cell, cell);
-        var v = grid[y][x];
-        if (!v) continue;
-        ctx.fillStyle = '#000';
-        ctx.strokeStyle = '#000';
-        if (v === 'fill') ctx.fillRect(x*cell+2,y*cell+2,cell-4,cell-4);
-        if (v === 'cross') {
-          ctx.beginPath();
-          ctx.moveTo(x*cell+3,y*cell+3);
-          ctx.lineTo(x*cell+cell-3,y*cell+cell-3);
-          ctx.moveTo(x*cell+cell-3,y*cell+3);
-          ctx.lineTo(x*cell+3,y*cell+cell-3);
-          ctx.stroke();
+    cell.onclick = function () {
+        const mode = document.getElementById("mode").value;
+
+        if (mode === "fill") {
+            cell.textContent = "";
+            cell.classList.toggle("active");
+        } else if (mode === "erase") {
+            cell.textContent = "";
+            cell.classList.remove("active");
+        } else {
+            cell.classList.remove("active");
+            cell.textContent = cell.textContent === mode ? "" : mode;
         }
-        if (v === 'circle') {
-          ctx.beginPath();
-          ctx.arc(x*cell+cell/2,y*cell+cell/2,cell/2-3,0,Math.PI*2);
-          ctx.stroke();
-        }
-      }
-    }
-  }
+    };
 
-  canvas.addEventListener('click', function(e){
-    var rect = canvas.getBoundingClientRect();
-    var x = Math.floor((e.clientX - rect.left)/cell);
-    var y = Math.floor((e.clientY - rect.top)/cell);
-    if (tool === 'erase') grid[y][x] = null;
-    else grid[y][x] = tool;
-    draw();
-  });
+    grid.appendChild(cell);
+}
 
-  document.getElementById('tool').onchange = function(e){ tool = e.target.value; };
-
-  function resizeGrid(){
-    size = parseInt(document.getElementById('gridSize').value,10);
-    initGrid();
-  }
-
-  function exportPNG(){
-    html2canvas(canvas).then(function(c){
-      c.toBlob(function(blob){
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'grid.png';
-        a.click();
-      });
+function clearGrid() {
+    if (!confirm("Clear everything?")) return;
+    document.querySelectorAll(".cell").forEach(c => {
+        c.textContent = "";
+        c.classList.remove("active");
     });
-  }
+}
 
-  var drawer = document.getElementById('drawer');
-  var overlay = document.getElementById('overlay');
-
-  document.getElementById('menuBtn').onclick = function(){
-    drawer.classList.add('open');
-    overlay.classList.add('show');
-  };
-
-  overlay.onclick = function(){
-    drawer.classList.remove('open');
-    overlay.classList.remove('show');
-  };
-
-  initGrid();
+function exportPNG() {
+    html2canvas(grid, {
+        backgroundColor: "#ffffff",
+        scale: 2
+    }).then(canvas => {
+        const link = document.createElement("a");
+        link.download = "grid.png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+    });
+}
 </script>
+
 </body>
 </html>
+"""
+
+components.html(html, height=900, scrolling=True)
+
+st.caption("Grid Designer – safe template")
