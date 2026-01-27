@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # --- STREAMLIT SETUP ---
-st.set_page_config(page_title="Hækle Grid Pro v6 (Mobilvenlig)", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Hækle Grid Pro v6 (Mobilvenlig + lille PDF)", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
@@ -237,7 +237,7 @@ html_code = r"""
       <li><span class="pill">5</span> Fortryd/Gendan: ↩️/↪️ (desktop: <b>Ctrl/Cmd+Z</b> og <b>Ctrl/Cmd+Y</b>).</li>
       <li><span class="pill">6</span> Gem:
         <ul>
-          <li><b>PDF</b> er godt til print og deling.</li>
+          <li><b>PDF</b> er godt til print og deling. (Denne eksport er pladsoptimeret.)</li>
           <li><b>PNG</b> er godt som billede (fx til telefonen).</li>
         </ul>
       </li>
@@ -474,11 +474,9 @@ html_code = r"""
   }
 
   function zoomAtCenter(mult){
-    // Zoom omkring midten af viewport
     const beforeScale = scale;
     const newScale = clamp(scale * mult, minScale, maxScale);
 
-    // viewport center i canvas-koordinater
     const vpRect = vp.getBoundingClientRect();
     const centerX = vpRect.left + vpRect.width/2;
     const centerY = vpRect.top + vpRect.height/2;
@@ -489,7 +487,6 @@ html_code = r"""
 
     setScale(newScale);
 
-    // juster scroll så center forbliver center-ish
     vp.scrollLeft = canvasX * newScale - (vpRect.width/2);
     vp.scrollTop  = canvasY * newScale - (vpRect.height/2);
 
@@ -526,11 +523,11 @@ html_code = r"""
       return;
     }
 
-    // 1 pointer: tegn eller pan afhængigt af lock + keyboard space
     const shouldPan = isPanLocked || spaceDown;
     if(shouldPan){
       drawing = false;
       lastCell = { r:-1, c:-1 };
+      lastSinglePointerPos = { x: e.clientX, y: e.clientY };
       return;
     }
 
@@ -562,12 +559,11 @@ html_code = r"""
         const newScale = clamp(pinchStartScale * factor, minScale, maxScale);
         const prevScale = scale;
 
-        // zoom omkring midtpunktet
         const vpRect = vp.getBoundingClientRect();
-        const rect = canvas.getBoundingClientRect();
 
-        const mx = mid.x - vpRect.left + vp.scrollLeft;
-        const my = mid.y - vpRect.top + vp.scrollTop;
+        // midtpunktet i viewport coords (inkl scroll)
+        const mx = (mid.x - vpRect.left) + vp.scrollLeft;
+        const my = (mid.y - vpRect.top) + vp.scrollTop;
 
         const canvasX = mx / prevScale;
         const canvasY = my / prevScale;
@@ -591,10 +587,8 @@ html_code = r"""
       return;
     }
 
-    // 1 pointer:
+    // 1 pointer: pan hvis låst/space
     if(isPanLocked || spaceDown){
-      // pan med musebevægelse / finger (når lock/space)
-      // movementX/Y fungerer ikke altid på touch, så vi bruger delta fra last position
       const prev = lastSinglePointerPos;
       const cur = { x: e.clientX, y: e.clientY };
       if(prev){
@@ -635,7 +629,6 @@ html_code = r"""
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
   canvas.addEventListener('pointerout', (e) => {
-    // hvis pointer forlader canvas, stop tegning (mere for desktop)
     if(e.pointerType === 'mouse') drawing = false;
   });
 
@@ -644,18 +637,15 @@ html_code = r"""
   window.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
 
-    // Undgå at browseren scroller ved space
     if(key === ' '){
       spaceDown = true;
       e.preventDefault();
     }
 
-    // Undo/Redo
     const isMod = e.ctrlKey || e.metaKey;
     if(isMod && key === 'z'){ e.preventDefault(); undo(); }
     if(isMod && (key === 'y' || (key === 'z' && e.shiftKey))){ e.preventDefault(); redo(); }
 
-    // Zoom
     if(key === '+' || key === '=' ){ e.preventDefault(); zoomAtCenter(1.15); }
     if(key === '-' || key === '_' ){ e.preventDefault(); zoomAtCenter(1/1.15); }
   });
@@ -664,7 +654,7 @@ html_code = r"""
     if(e.key === ' ') spaceDown = false;
   });
 
-  // --- EXPORT ---
+  // --- EXPORT: PNG ---
   function exportPNG(){
     const url = canvas.toDataURL("image/png");
     const a = document.createElement('a');
@@ -673,25 +663,81 @@ html_code = r"""
     a.click();
   }
 
-  async function exportPDF(){
+  // --- EXPORT: PDF (PLADSOPTIMERET) ---
+  function canvasToJpegDataUrl(sourceCanvas, quality = 0.72){
+    return sourceCanvas.toDataURL("image/jpeg", quality);
+  }
+
+  async function exportPDF() {
     const { jsPDF } = window.jspdf;
 
-    const tempCanvas = document.createElement('canvas');
-    const exportScale = 2;
-    tempCanvas.width = ((COLS * SIZE) + OFFSET + 80) * exportScale;
-    tempCanvas.height = ((ROWS * SIZE) + OFFSET + 80) * exportScale;
+    // Indstillinger (justér hvis du vil endnu mindre/større)
+    const exportScale = 1.35;   // 1.2–1.6 typisk. 2.0 giver hurtigt store filer
+    const jpegQuality = 0.72;   // 0.60–0.80 anbefalet
+    const marginMm = 8;
 
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.scale(exportScale, exportScale);
-    drawOnContext(tempCtx, SIZE, OFFSET, true);
+    const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true });
 
-    const imgData = tempCanvas.toDataURL("image/png");
+    const pageW = 210;
+    const pageH = 297;
+    const usableW = pageW - marginMm * 2;
+    const usableH = pageH - marginMm * 2;
 
-    const pdfW = 210;
-    const pdfH = (tempCanvas.height * pdfW) / tempCanvas.width;
+    // Master-canvas i moderat opløsning
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width  = Math.ceil(((COLS * SIZE) + OFFSET + 80) * exportScale);
+    tempCanvas.height = Math.ceil(((ROWS * SIZE) + OFFSET + 80) * exportScale);
 
-    const pdf = new jsPDF('p', 'mm', [pdfW, pdfH]);
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+    const tCtx = tempCanvas.getContext("2d");
+    tCtx.scale(exportScale, exportScale);
+    drawOnContext(tCtx, SIZE, OFFSET, true);
+
+    // mm -> px ud fra master-canvas bredde
+    const pxPerMm = tempCanvas.width / usableW;
+    const pagePxH = Math.floor(usableH * pxPerMm);
+
+    // Slice-canvas (en A4-side ad gangen)
+    const sliceCanvas = document.createElement("canvas");
+    sliceCanvas.width = tempCanvas.width;
+    sliceCanvas.height = pagePxH;
+    const sCtx = sliceCanvas.getContext("2d");
+
+    const totalPages = Math.ceil(tempCanvas.height / pagePxH);
+
+    for (let page = 0; page < totalPages; page++) {
+      const sy = page * pagePxH;
+      const sh = Math.min(pagePxH, tempCanvas.height - sy);
+
+      if (sliceCanvas.height !== sh) sliceCanvas.height = sh;
+
+      // Hvid baggrund (vigtigt for JPEG)
+      sCtx.fillStyle = "#ffffff";
+      sCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+
+      sCtx.drawImage(
+        tempCanvas,
+        0, sy, tempCanvas.width, sh,
+        0, 0, tempCanvas.width, sh
+      );
+
+      const imgData = canvasToJpegDataUrl(sliceCanvas, jpegQuality);
+
+      if (page > 0) pdf.addPage();
+
+      const imgH_mm = (sh / pxPerMm);
+
+      pdf.addImage(
+        imgData,
+        "JPEG",
+        marginMm,
+        marginMm,
+        usableW,
+        imgH_mm,
+        undefined,
+        "FAST"
+      );
+    }
+
     pdf.save("haekle-moenster.pdf");
   }
 
