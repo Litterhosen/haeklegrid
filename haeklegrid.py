@@ -1,3 +1,17 @@
+import streamlit as st
+import streamlit.components.v1 as components
+
+# --- STREAMLIT SETUP ---
+st.set_page_config(page_title="Hækle Grid Pro v7 (Mobilmenu + bedre PDF)", layout="wide", initial_sidebar_state="collapsed")
+
+st.markdown("""
+<style>
+header, footer, .stDeployButton, [data-testid="stHeader"] {display:none !important;}
+.main .block-container {padding: 0px !important;}
+body { background: #1a252f; overflow: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
 html_code = r"""
 <!DOCTYPE html>
 <html>
@@ -71,14 +85,6 @@ html_code = r"""
   .mode{
     min-width: 170px;
     max-width: 240px;
-  }
-
-  .status{
-    font-size:12px;
-    font-weight:800;
-    opacity:0.8;
-    padding:0 6px;
-    white-space:nowrap;
   }
 
   /* === FOLD-UD MENU PANEL === */
@@ -167,7 +173,6 @@ html_code = r"""
     button, select, input{ height:40px; font-size:13px; }
     .mode{ min-width: 150px; max-width: 170px; }
     .btn-text{ padding:0 10px; }
-    .status{ display:none; } /* skjul status på små skærme for plads */
     .panel{ top:52px; }
   }
 </style>
@@ -211,9 +216,9 @@ html_code = r"""
   <div class="panel-row">
     <div class="group" aria-label="Størrelse på grid">
       <label style="font-weight:900;">Størrelse:</label>
-      <input type="number" id="rows" value="114" class="size-input" inputmode="numeric" title="Antal rækker (rk)"> rk
+      <input type="number" id="rows" value="114" class="size-input" inputmode="numeric" title="Antal rækker"> Rækker
       <span style="font-weight:900;">×</span>
-      <input type="number" id="cols" value="23" class="size-input" inputmode="numeric" title="Antal masker/kolonner (mk)"> mk
+      <input type="number" id="cols" value="23" class="size-input" inputmode="numeric" title="Antal kolonner/masker"> Kolonner
       <button class="btn-text" onclick="resizeGrid()" style="background:#d9dde1;" title="Anvend ny størrelse">Anvend</button>
     </div>
   </div>
@@ -226,7 +231,7 @@ html_code = r"""
         <option value="print">Print (skarpere)</option>
         <option value="small">Lille fil</option>
       </select>
-      <span style="font-size:12px; font-weight:800; opacity:0.75;">(A4-sider)</span>
+      <span style="font-size:12px; font-weight:800; opacity:0.75;">A4-sider</span>
     </div>
   </div>
 
@@ -262,7 +267,7 @@ html_code = r"""
       Brug griddet til <b>hækling</b>, <b>strik</b>, <b>korssting</b>, <b>broderi</b>, <b>perleplader</b> og andre mønstre.
     </p>
     <ul>
-      <li><span class="pill">1</span> Vælg værktøj: <b>Fyld (sort)</b>, <b>X</b>, <b>O</b> eller <b>Viskelæder</b>.</li>
+      <li><span class="pill">1</span> Vælg værktøj: <b>Fyld</b>, <b>X</b>, <b>O</b> eller <b>Viskelæder</b>.</li>
       <li><span class="pill">2</span> Tryk eller træk på griddet for at tegne.</li>
       <li><span class="pill">3</span> Flyt/zoom:
         <ul>
@@ -292,6 +297,7 @@ html_code = r"""
   const ctx = canvas.getContext('2d');
   const vp = document.getElementById('vp');
 
+  // Pointer tracking
   const pointers = new Map();
   let drawing = false;
   let lastCell = { r: -1, c: -1 };
@@ -393,6 +399,7 @@ html_code = r"""
     tCtx.fillStyle = "white";
     tCtx.fillRect(0,0,tCtx.canvas.width,tCtx.canvas.height);
 
+    // Grid lines + numbering
     for(let i=0;i<=COLS;i++){
       const x = i*s + off + margin;
       tCtx.beginPath();
@@ -427,6 +434,7 @@ html_code = r"""
       }
     }
 
+    // Content
     tCtx.textAlign="center";
     for(let r=0;r<ROWS;r++){
       for(let c=0;c<COLS;c++){
@@ -453,7 +461,6 @@ html_code = r"""
     if(history.length>60) history.shift();
     redoStack = [];
   }
-
   function undo(){
     if(history.length){
       redoStack.push(JSON.stringify(gridData));
@@ -461,7 +468,6 @@ html_code = r"""
       draw(); autoSave();
     }
   }
-
   function redo(){
     if(redoStack.length){
       history.push(JSON.stringify(gridData));
@@ -470,7 +476,7 @@ html_code = r"""
     }
   }
 
-  // --- INPUT / HIT TEST ---
+  // --- HIT TEST ---
   function getCellFromClient(clientX, clientY){
     const rect = canvas.getBoundingClientRect();
     const x = (clientX - rect.left) / scale;
@@ -658,7 +664,7 @@ html_code = r"""
     a.click();
   }
 
-  // --- PDF: KVALITETSPRESETS (BEDRE KVALITET, STADIG PLADSOPTIMERET) ---
+  // --- PDF EXPORT (A4 + KVALITETSPRESETS) ---
   function getPdfSettings(){
     const preset = document.getElementById('pdfPreset').value;
     if(preset === 'print')  return { exportScale: 1.65, jpegQuality: 0.82, render: "SLOW" };
@@ -673,8 +679,8 @@ html_code = r"""
   async function exportPDF() {
     const { jsPDF } = window.jspdf;
     const { exportScale, jpegQuality, render } = getPdfSettings();
-
     const marginMm = 8;
+
     const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true });
 
     const pageW = 210, pageH = 297;
@@ -710,6 +716,7 @@ html_code = r"""
       sCtx.drawImage(tempCanvas, 0, sy, tempCanvas.width, sh, 0, 0, tempCanvas.width, sh);
 
       const imgData = canvasToJpegDataUrl(sliceCanvas, jpegQuality);
+
       if (page > 0) pdf.addPage();
 
       const imgH_mm = (sh / pxPerMm);
@@ -741,13 +748,16 @@ html_code = r"""
           const c = (i/4) % COLS;
           gridData[r][c] = avg < 125 ? 'fill' : null;
         }
+
         draw(); autoSave();
       }
       img.src = event.target.result;
     }
     reader.readAsDataURL(file);
     e.target.value = "";
-    togglePanel(); // luk menu efter valg (føles mere app-agtigt)
+    // Luk menu for app-følelse
+    const panel = document.getElementById('panel');
+    if(panel.style.display === 'block') togglePanel();
   };
 
   function resetCanvas(){
@@ -757,9 +767,10 @@ html_code = r"""
     }
   }
 
-  // --- START ---
   init();
 </script>
 </body>
 </html>
 """
+
+components.html(html_code, height=1200, scrolling=False)
