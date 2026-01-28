@@ -2,7 +2,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # --- STREAMLIT SETUP ---
-st.set_page_config(page_title="Hækle Grid Pro v7 (Mobilmenu + bedre PDF)", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="Hækle Grid Pro v7 (Mobilmenu + bedre PDF)",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 st.markdown("""
 <style>
@@ -12,8 +16,7 @@ body { background: #1a252f; overflow: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
-html_code = r"""
-<!DOCTYPE html>
+html_code = r"""<!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
