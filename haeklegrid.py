@@ -688,7 +688,7 @@ html_code = r"""
   }
 
   // --- STREGVÆRKTØJ (line tool) ---
-  // Bresenham's linje-algortime til at finde alle celler på linjen
+  // Bresenham's linje-algoritme til at finde alle celler på linjen
   function bresenham(r1, c1, r2, c2){
     const cells = [];
     let dr = Math.abs(r2-r1), dc = Math.abs(c2-c1);
@@ -932,7 +932,7 @@ html_code = r"""
       pdf.addImage(imgData,"JPEG",marginMm,marginMm,usableW,imgH_mm,undefined,render);
     }
 
-    pdf.save("haekle-moenster.pdf");
+    pdf.save("haekle-mønster.pdf");
   }
 
   // --- IMPORT FOTO ---
