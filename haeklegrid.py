@@ -94,7 +94,7 @@ html_code = r"""
   .mode.drawing-mode{ 
     background: linear-gradient(135deg, #f1c40f 0%, #f39c12 100%);
     border: 2px solid #f39c12;
-    font-weight: 800;
+    font-weight: bold;
   }
 
   .mode{
@@ -337,7 +337,10 @@ html_code = r"""
   // Validate canvas is available
   if(!canvas || !ctx){
     console.error('Canvas element not found or context not available');
-    document.body.innerHTML = '<div style="padding:20px;color:white;text-align:center;">Fejl: Canvas kunne ikke indlæses. Prøv at genindlæse siden.</div>';
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = 'padding:20px;color:white;text-align:center;';
+    errorDiv.textContent = 'Fejl: Canvas kunne ikke indlæses. Prøv at genindlæse siden.';
+    document.body.appendChild(errorDiv);
     throw new Error('Canvas not available');
   }
 
@@ -346,9 +349,11 @@ html_code = r"""
   let drawing = false;
   let lastCell = { r: -1, c: -1 };
   
-  // Performance: debounced draw
+  // Performance: debounced draw and save
   let drawPending = false;
   let autoSavePending = false;
+  const AUTO_SAVE_DEBOUNCE_MS = 500; // Delay before saving to reduce localStorage writes
+  const MAX_HISTORY_ENTRIES = 30; // Keep last 30 undo states in localStorage to save space
 
   // --- PANEL / HELP ---
   function togglePanel(){
@@ -443,8 +448,8 @@ html_code = r"""
       localStorage.setItem('haekleGridRows', ROWS);
       localStorage.setItem('haekleGridCols', COLS);
       
-      // Save undo history (keep last 30 to save space)
-      const historyToSave = history.slice(-30);
+      // Save undo history (limit to MAX_HISTORY_ENTRIES to conserve space)
+      const historyToSave = history.slice(-MAX_HISTORY_ENTRIES);
       localStorage.setItem('haekleGridHistory', JSON.stringify(historyToSave));
     } catch(e){
       if(e.name === 'QuotaExceededError'){
@@ -579,7 +584,7 @@ html_code = r"""
     setTimeout(() => {
       autoSave();
       autoSavePending = false;
-    }, 500); // Save 500ms after last change
+    }, AUTO_SAVE_DEBOUNCE_MS);
   }
 
   function saveHistory(){
@@ -885,10 +890,8 @@ html_code = r"""
         const imgH_mm = (sh / pxPerMm);
         pdf.addImage(imgData, "JPEG", marginMm, marginMm, usableW, imgH_mm, undefined, render);
         
-        // Update progress
+        // Update progress and allow UI to breathe every 2 pages for responsiveness
         pdfBtn.innerHTML = `⏳ Side ${page+1}/${totalPages}...`;
-        
-        // Allow UI to update between pages for progress feedback
         if(page % 2 === 0) await new Promise(resolve => setTimeout(resolve, 0));
       }
 
