@@ -27,6 +27,16 @@ html_code = r"""
     --btn-red:#e74c3c;
     --toolbar-h:64px;
   }
+  
+  /* Safe area support for iOS notch */
+  @supports (padding: max(0px)) {
+    body {
+      padding-top: env(safe-area-inset-top);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
 
   * { box-sizing: border-box; }
   body{
@@ -81,6 +91,11 @@ html_code = r"""
   .btn-green{ background:var(--btn-green); color:#fff; border:none; }
   .btn-red{ background:var(--btn-red); color:#fff; border:none; }
   .active-tool{ background:#f1c40f !important; color:#000 !important; }
+  .mode.drawing-mode{ 
+    background: linear-gradient(135deg, #f1c40f 0%, #f39c12 100%);
+    border: 2px solid #f39c12;
+    font-weight: bold;
+  }
 
   .mode{
     min-width: 170px;
@@ -167,13 +182,35 @@ html_code = r"""
   }
 
   /* === MOBIL OPTIMERING === */
-  @media (max-width: 560px){
+  
+  /* Extra small screens - iPhone SE, small Android */
+  @media (max-width: 400px){
+    :root{ --toolbar-h: 54px; }
+    .topbar{ padding:6px 6px; gap:4px; }
+    button, select, input{ height:38px; font-size:12px; }
+    .btn-icon{ width:38px; font-size:16px; }
+    .mode{ min-width: 130px; max-width: 150px; font-size:12px; }
+    .btn-text{ padding:0 8px; gap:4px; font-size:12px; }
+    .panel{ top:50px; left:6px; right:6px; max-height:calc(80vh - 50px); overflow-y:auto; }
+    .panel h3{ font-size:15px; }
+    .group{ padding:6px 8px; gap:6px; }
+    .size-input{ width:80px; font-size:14px; }
+  }
+  
+  /* Small to medium screens */
+  @media (min-width: 401px) and (max-width: 560px){
     :root{ --toolbar-h: 56px; }
     .topbar{ padding:7px 8px; gap:6px; }
     button, select, input{ height:40px; font-size:13px; }
+    .btn-icon{ width:40px; }
     .mode{ min-width: 150px; max-width: 170px; }
     .btn-text{ padding:0 10px; }
-    .panel{ top:52px; }
+    .panel{ top:52px; left:8px; right:8px; max-height:calc(75vh - 52px); overflow-y:auto; }
+  }
+  
+  /* Medium screens */
+  @media (min-width: 561px) and (max-width: 768px){
+    .panel{ max-height:calc(70vh - 56px); overflow-y:auto; }
   }
 </style>
 </head>
@@ -183,7 +220,7 @@ html_code = r"""
   <div class="topbar">
     <button class="btn-text" onclick="togglePanel()" title="Åbn/luk menu">☰ Menu</button>
 
-    <select id="mode" class="mode" title="Vælg hvad du vil tegne">
+    <select id="mode" class="mode" title="Vælg hvad du vil tegne" onchange="updateModeStyle()">
       <option value="fill">⚫ Fyld (sort)</option>
       <option value="X">❌ X-maske</option>
       <option value="O">⭕ O-maske</option>
@@ -294,13 +331,29 @@ html_code = r"""
   const minScale = 0.2, maxScale = 4.0;
 
   const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas ? canvas.getContext('2d') : null;
   const vp = document.getElementById('vp');
+  
+  // Validate canvas is available
+  if(!canvas || !ctx){
+    console.error('Canvas element not found or context not available');
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = 'padding:20px;color:white;text-align:center;';
+    errorDiv.textContent = 'Fejl: Canvas kunne ikke indlæses. Prøv at genindlæse siden.';
+    document.body.appendChild(errorDiv);
+    throw new Error('Canvas not available');
+  }
 
   // Pointer tracking
   const pointers = new Map();
   let drawing = false;
   let lastCell = { r: -1, c: -1 };
+  
+  // Performance: debounced draw and save
+  let drawPending = false;
+  let autoSavePending = false;
+  const AUTO_SAVE_DEBOUNCE_MS = 500; // Delay before saving to reduce localStorage writes
+  const MAX_HISTORY_ENTRIES = 30; // Keep last 30 undo states in localStorage to save space
 
   // --- PANEL / HELP ---
   function togglePanel(){
@@ -341,36 +394,94 @@ html_code = r"""
 
   // --- AUTO-SAVE ---
   function init(){
-    const saved = localStorage.getItem('haekleGridData');
-    const sRows = localStorage.getItem('haekleGridRows');
-    const sCols = localStorage.getItem('haekleGridCols');
-    const sScale = localStorage.getItem('haekleGridScale');
+    try {
+      const saved = localStorage.getItem('haekleGridData');
+      const sRows = localStorage.getItem('haekleGridRows');
+      const sCols = localStorage.getItem('haekleGridCols');
+      const sScale = localStorage.getItem('haekleGridScale');
+      const sHistory = localStorage.getItem('haekleGridHistory');
 
-    if(saved && sRows && sCols){
-      gridData = JSON.parse(saved);
-      ROWS = parseInt(sRows, 10);
-      COLS = parseInt(sCols, 10);
-      document.getElementById('rows').value = ROWS;
-      document.getElementById('cols').value = COLS;
-    } else {
+      if(saved && sRows && sCols){
+        try {
+          gridData = JSON.parse(saved);
+          ROWS = parseInt(sRows, 10);
+          COLS = parseInt(sCols, 10);
+          document.getElementById('rows').value = ROWS;
+          document.getElementById('cols').value = COLS;
+          
+          // Restore undo history
+          if(sHistory){
+            try {
+              history = JSON.parse(sHistory);
+              if(!Array.isArray(history)) history = [];
+            } catch(e){
+              console.warn('Could not restore history:', e);
+              history = [];
+            }
+          }
+        } catch(e){
+          console.error('Error parsing saved data:', e);
+          gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
+        }
+      } else {
+        gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
+      }
+
+      updateCanvas();
+      setScale(sScale ? parseFloat(sScale) : 1.0);
+      measureToolbarHeight();
+      updateModeStyle();
+    } catch(e){
+      console.error('Initialization error:', e);
+      // Fallback to defaults
       gridData = Array(ROWS).fill().map(() => Array(COLS).fill(null));
+      updateCanvas();
+      setScale(1.0);
+      measureToolbarHeight();
+      updateModeStyle();
     }
-
-    updateCanvas();
-    setScale(sScale ? parseFloat(sScale) : 1.0);
-    measureToolbarHeight();
   }
 
   function autoSave(){
-    localStorage.setItem('haekleGridData', JSON.stringify(gridData));
-    localStorage.setItem('haekleGridRows', ROWS);
-    localStorage.setItem('haekleGridCols', COLS);
+    try {
+      localStorage.setItem('haekleGridData', JSON.stringify(gridData));
+      localStorage.setItem('haekleGridRows', ROWS);
+      localStorage.setItem('haekleGridCols', COLS);
+      
+      // Save undo history (limit to MAX_HISTORY_ENTRIES to conserve space)
+      const historyToSave = history.slice(-MAX_HISTORY_ENTRIES);
+      localStorage.setItem('haekleGridHistory', JSON.stringify(historyToSave));
+    } catch(e){
+      if(e.name === 'QuotaExceededError'){
+        console.warn('Storage quota exceeded. Clearing old history...');
+        // Try saving without history
+        try {
+          localStorage.removeItem('haekleGridHistory');
+          localStorage.setItem('haekleGridData', JSON.stringify(gridData));
+          localStorage.setItem('haekleGridRows', ROWS);
+          localStorage.setItem('haekleGridCols', COLS);
+        } catch(e2){
+          console.error('Could not save data:', e2);
+          alert('Kunne ikke gemme data - hukommelsen er fuld. Eksporter dit mønster nu!');
+        }
+      } else {
+        console.error('Save error:', e);
+      }
+    }
   }
 
   // --- RESIZE ---
   function resizeGrid(){
     const nR = Math.max(1, parseInt(document.getElementById('rows').value || "1", 10));
     const nC = Math.max(1, parseInt(document.getElementById('cols').value || "1", 10));
+    
+    // Warn about very large grids
+    if(nR * nC > 15000){
+      if(!confirm(`Dette er et meget stort grid (${nR}×${nC} = ${nR*nC} celler). Det kan være langsomt. Fortsæt?`)){
+        return;
+      }
+    }
+    
     saveHistory();
 
     const old = JSON.parse(JSON.stringify(gridData));
@@ -455,6 +566,26 @@ html_code = r"""
   }
 
   function draw(){ drawOnContext(ctx, SIZE, OFFSET, false); }
+  
+  // Debounced draw for performance during fast drawing
+  function requestDraw(){
+    if(drawPending) return;
+    drawPending = true;
+    requestAnimationFrame(() => {
+      draw();
+      drawPending = false;
+    });
+  }
+  
+  // Debounced auto-save to reduce localStorage writes
+  function requestAutoSave(){
+    if(autoSavePending) return;
+    autoSavePending = true;
+    setTimeout(() => {
+      autoSave();
+      autoSavePending = false;
+    }, AUTO_SAVE_DEBOUNCE_MS);
+  }
 
   function saveHistory(){
     history.push(JSON.stringify(gridData));
@@ -465,14 +596,16 @@ html_code = r"""
     if(history.length){
       redoStack.push(JSON.stringify(gridData));
       gridData = JSON.parse(history.pop());
-      draw(); autoSave();
+      draw(); 
+      requestAutoSave();
     }
   }
   function redo(){
     if(redoStack.length){
       history.push(JSON.stringify(gridData));
       gridData = JSON.parse(redoStack.pop());
-      draw(); autoSave();
+      draw(); 
+      requestAutoSave();
     }
   }
 
@@ -503,6 +636,16 @@ html_code = r"""
   function togglePan(){
     isPanLocked = !isPanLocked;
     document.getElementById('panBtn').classList.toggle('active-tool', isPanLocked);
+  }
+  
+  function updateModeStyle(){
+    const mode = document.getElementById('mode');
+    // Add visual feedback when drawing mode is selected
+    if(mode.value !== 'erase'){
+      mode.classList.add('drawing-mode');
+    } else {
+      mode.classList.remove('drawing-mode');
+    }
   }
 
   function zoomAtCenter(mult){
@@ -539,7 +682,12 @@ html_code = r"""
   }
 
   canvas.addEventListener('pointerdown', (e) => {
-    canvas.setPointerCapture(e.pointerId);
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch(err){
+      // Pointer capture not supported or failed - continue anyway
+      console.warn('Pointer capture not available:', err);
+    }
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
     if(pointers.size === 2){
@@ -565,7 +713,8 @@ html_code = r"""
       drawing = true;
       lastCell = { r:-1, c:-1 };
       applyCellIfNew(cell.r, cell.c);
-      draw(); autoSave();
+      requestDraw(); 
+      requestAutoSave();
     }
   });
 
@@ -621,7 +770,8 @@ html_code = r"""
       const cell = getCellFromClient(e.clientX, e.clientY);
       if(cell.r>=0 && cell.c>=0 && cell.r<ROWS && cell.c<COLS){
         applyCellIfNew(cell.r, cell.c);
-        draw(); autoSave();
+        requestDraw(); 
+        requestAutoSave();
       }
     }
   });
@@ -657,11 +807,16 @@ html_code = r"""
 
   // --- EXPORT PNG ---
   function exportPNG(){
-    const url = canvas.toDataURL("image/png");
-    const a = document.createElement('a');
-    a.download = "haekle-design.png";
-    a.href = url;
-    a.click();
+    try {
+      const url = canvas.toDataURL("image/png");
+      const a = document.createElement('a');
+      a.download = "haekle-design.png";
+      a.href = url;
+      a.click();
+    } catch(e){
+      console.error('PNG export error:', e);
+      alert('Kunne ikke eksportere PNG. Prøv med en mindre grid-størrelse.');
+    }
   }
 
   // --- PDF EXPORT (A4 + KVALITETSPRESETS) ---
@@ -677,93 +832,155 @@ html_code = r"""
   }
 
   async function exportPDF() {
-    const { jsPDF } = window.jspdf;
-    const { exportScale, jpegQuality, render } = getPdfSettings();
-    const marginMm = 8;
-
-    const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true });
-
-    const pageW = 210, pageH = 297;
-    const usableW = pageW - marginMm * 2;
-    const usableH = pageH - marginMm * 2;
-
-    const tempCanvas = document.createElement("canvas");
-    tempCanvas.width  = Math.ceil(((COLS * SIZE) + OFFSET + 80) * exportScale);
-    tempCanvas.height = Math.ceil(((ROWS * SIZE) + OFFSET + 80) * exportScale);
-
-    const tCtx = tempCanvas.getContext("2d");
-    tCtx.scale(exportScale, exportScale);
-    drawOnContext(tCtx, SIZE, OFFSET, true);
-
-    const pxPerMm = tempCanvas.width / usableW;
-    const pagePxH = Math.floor(usableH * pxPerMm);
-
-    const sliceCanvas = document.createElement("canvas");
-    sliceCanvas.width = tempCanvas.width;
-    sliceCanvas.height = pagePxH;
-    const sCtx = sliceCanvas.getContext("2d");
-
-    const totalPages = Math.ceil(tempCanvas.height / pagePxH);
-
-    for (let page = 0; page < totalPages; page++) {
-      const sy = page * pagePxH;
-      const sh = Math.min(pagePxH, tempCanvas.height - sy);
-      if (sliceCanvas.height !== sh) sliceCanvas.height = sh;
-
-      sCtx.fillStyle = "#ffffff";
-      sCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-
-      sCtx.drawImage(tempCanvas, 0, sy, tempCanvas.width, sh, 0, 0, tempCanvas.width, sh);
-
-      const imgData = canvasToJpegDataUrl(sliceCanvas, jpegQuality);
-
-      if (page > 0) pdf.addPage();
-
-      const imgH_mm = (sh / pxPerMm);
-      pdf.addImage(imgData, "JPEG", marginMm, marginMm, usableW, imgH_mm, undefined, render);
+    // Check if jsPDF is loaded
+    if(!window.jspdf || !window.jspdf.jsPDF){
+      alert('PDF-biblioteket er ikke indlæst endnu. Prøv igen om lidt.');
+      return;
     }
+    
+    // Show loading indicator
+    const pdfBtn = document.querySelector('button[onclick="exportPDF()"]');
+    const originalText = pdfBtn.innerHTML;
+    pdfBtn.innerHTML = '⏳ Eksporterer...';
+    pdfBtn.disabled = true;
+    
+    try {
+      const { jsPDF } = window.jspdf;
+      const { exportScale, jpegQuality, render } = getPdfSettings();
+      const marginMm = 8;
 
-    pdf.save("haekle-moenster.pdf");
+      const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true });
+
+      const pageW = 210, pageH = 297;
+      const usableW = pageW - marginMm * 2;
+      const usableH = pageH - marginMm * 2;
+
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width  = Math.ceil(((COLS * SIZE) + OFFSET + 80) * exportScale);
+      tempCanvas.height = Math.ceil(((ROWS * SIZE) + OFFSET + 80) * exportScale);
+
+      const tCtx = tempCanvas.getContext("2d");
+      tCtx.scale(exportScale, exportScale);
+      drawOnContext(tCtx, SIZE, OFFSET, true);
+
+      const pxPerMm = tempCanvas.width / usableW;
+      const pagePxH = Math.floor(usableH * pxPerMm);
+
+      const sliceCanvas = document.createElement("canvas");
+      sliceCanvas.width = tempCanvas.width;
+      sliceCanvas.height = pagePxH;
+      const sCtx = sliceCanvas.getContext("2d");
+
+      const totalPages = Math.ceil(tempCanvas.height / pagePxH);
+
+      for (let page = 0; page < totalPages; page++) {
+        const sy = page * pagePxH;
+        const sh = Math.min(pagePxH, tempCanvas.height - sy);
+        if (sliceCanvas.height !== sh) sliceCanvas.height = sh;
+
+        sCtx.fillStyle = "#ffffff";
+        sCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+
+        sCtx.drawImage(tempCanvas, 0, sy, tempCanvas.width, sh, 0, 0, tempCanvas.width, sh);
+
+        const imgData = canvasToJpegDataUrl(sliceCanvas, jpegQuality);
+
+        if (page > 0) pdf.addPage();
+
+        const imgH_mm = (sh / pxPerMm);
+        pdf.addImage(imgData, "JPEG", marginMm, marginMm, usableW, imgH_mm, undefined, render);
+        
+        // Update progress and allow UI to breathe every 2 pages for responsiveness
+        pdfBtn.innerHTML = `⏳ Side ${page+1}/${totalPages}...`;
+        if(page % 2 === 0) await new Promise(resolve => setTimeout(resolve, 0));
+      }
+
+      pdf.save("haekle-moenster.pdf");
+      pdfBtn.innerHTML = '✅ Gemt!';
+      setTimeout(() => {
+        pdfBtn.innerHTML = originalText;
+        pdfBtn.disabled = false;
+      }, 2000);
+    } catch(e){
+      console.error('PDF export error:', e);
+      alert('Kunne ikke eksportere PDF. Prøv med "Lille fil" kvalitet eller en mindre grid-størrelse.');
+      pdfBtn.innerHTML = originalText;
+      pdfBtn.disabled = false;
+    }
   }
 
   // --- IMPORT FOTO ---
   document.getElementById('imgInput').onchange = function(e){
     const file = e.target.files && e.target.files[0];
     if(!file) return;
+    
+    // Validate file type
+    if(!file.type.startsWith('image/')){
+      alert('Vælg venligst en billedfil (PNG, JPEG, etc.)');
+      e.target.value = "";
+      return;
+    }
+    
+    // Check file size (limit to 10MB)
+    if(file.size > 10 * 1024 * 1024){
+      alert('Billedet er for stort. Vælg venligst et billede under 10MB.');
+      e.target.value = "";
+      return;
+    }
 
     const reader = new FileReader();
+    reader.onerror = function(){
+      alert('Kunne ikke læse billedfilen. Prøv en anden fil.');
+      e.target.value = "";
+    };
     reader.onload = function(event){
       const img = new Image();
+      img.onerror = function(){
+        alert('Kunne ikke indlæse billedet. Prøv en anden fil.');
+        e.target.value = "";
+      };
       img.onload = function(){
-        saveHistory();
-        const tCanvas = document.createElement('canvas');
-        tCanvas.width = COLS; tCanvas.height = ROWS;
-        const tCtx = tCanvas.getContext('2d');
-        tCtx.drawImage(img, 0, 0, COLS, ROWS);
+        try {
+          saveHistory();
+          const tCanvas = document.createElement('canvas');
+          tCanvas.width = COLS; tCanvas.height = ROWS;
+          const tCtx = tCanvas.getContext('2d');
+          tCtx.drawImage(img, 0, 0, COLS, ROWS);
 
-        const pix = tCtx.getImageData(0, 0, COLS, ROWS).data;
-        for(let i=0; i<pix.length; i+=4){
-          const avg = (pix[i] + pix[i+1] + pix[i+2]) / 3;
-          const r = Math.floor((i/4)/COLS);
-          const c = (i/4) % COLS;
-          gridData[r][c] = avg < 125 ? 'fill' : null;
+          const pix = tCtx.getImageData(0, 0, COLS, ROWS).data;
+          for(let i=0; i<pix.length; i+=4){
+            const avg = (pix[i] + pix[i+1] + pix[i+2]) / 3;
+            const r = Math.floor((i/4)/COLS);
+            const c = (i/4) % COLS;
+            gridData[r][c] = avg < 125 ? 'fill' : null;
+          }
+
+          draw(); 
+          requestAutoSave();
+          
+          // Close menu
+          const panel = document.getElementById('panel');
+          if(panel.style.display === 'block') togglePanel();
+        } catch(err){
+          console.error('Image processing error:', err);
+          alert('Kunne ikke behandle billedet. Prøv med et mindre billede.');
         }
-
-        draw(); autoSave();
       }
       img.src = event.target.result;
     }
     reader.readAsDataURL(file);
     e.target.value = "";
-    // Luk menu for app-følelse
-    const panel = document.getElementById('panel');
-    if(panel.style.display === 'block') togglePanel();
   };
 
   function resetCanvas(){
-    if(confirm("Vil du slette ALT?")){
-      localStorage.clear();
-      location.reload();
+    if(confirm("Vil du slette ALT? Dette kan ikke fortrydes.")){
+      try {
+        localStorage.clear();
+        location.reload();
+      } catch(e){
+        console.error('Reset error:', e);
+        alert('Kunne ikke nulstille. Prøv at genindlæse siden manuelt.');
+      }
     }
   }
 
