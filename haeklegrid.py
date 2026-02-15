@@ -195,6 +195,7 @@ html_code = r"""
     .panel h3{ font-size:15px; }
     .group{ padding:6px 8px; gap:6px; }
     .size-input{ width:80px; font-size:14px; }
+    .hide-mobile{ display:none !important; }
   }
   
   /* Small to medium screens */
@@ -206,6 +207,7 @@ html_code = r"""
     .mode{ min-width: 150px; max-width: 170px; }
     .btn-text{ padding:0 10px; }
     .panel{ top:52px; left:8px; right:8px; max-height:calc(75vh - 52px); overflow-y:auto; }
+    .hide-mobile{ display:none !important; }
   }
   
   /* Medium screens */
@@ -232,12 +234,12 @@ html_code = r"""
 
     <button id="panBtn" class="btn-icon" onclick="togglePan()" title="Pan-lås (2 fingre pan virker altid på touch)">✋</button>
 
-    <button class="btn-icon" onclick="zoomAtCenter(1.15)" title="Zoom ind">➕</button>
-    <button class="btn-icon" onclick="zoomAtCenter(1/1.15)" title="Zoom ud">➖</button>
+    <button class="btn-icon hide-mobile" onclick="zoomAtCenter(1.15)" title="Zoom ind">➕</button>
+    <button class="btn-icon hide-mobile" onclick="zoomAtCenter(1/1.15)" title="Zoom ud">➖</button>
 
     <div class="spacer"></div>
 
-    <button class="btn-text btn-green" onclick="exportPDF()" title="Gem som PDF (A4, pladsoptimeret)">📄 PDF</button>
+    <button class="btn-text btn-green hide-mobile" onclick="exportPDF()" title="Gem som PDF (A4, pladsoptimeret)">📄 PDF</button>
     <button class="btn-icon" onclick="toggleHelp()" title="Kort brugsguide">❓</button>
   </div>
 </div>
@@ -273,10 +275,19 @@ html_code = r"""
   </div>
 
   <div class="panel-row">
+    <div class="group" aria-label="Zoom kontrol">
+      <label style="font-weight:900;">Zoom:</label>
+      <button class="btn-text" onclick="zoomAtCenter(1.15)" title="Zoom ind">➕ Zoom ind</button>
+      <button class="btn-text" onclick="zoomAtCenter(1/1.15)" title="Zoom ud">➖ Zoom ud</button>
+    </div>
+  </div>
+
+  <div class="panel-row">
     <div class="group" aria-label="Import og eksport">
       <button class="btn-text btn-blue" onclick="document.getElementById('imgInput').click()" title="Lav mønster ud fra et billede">📥 Hent foto</button>
       <input type="file" id="imgInput" accept="image/*">
 
+      <button class="btn-text btn-green" onclick="exportPDF()" title="Gem som PDF (A4, pladsoptimeret)">📄 PDF</button>
       <button class="btn-text" onclick="exportPNG()" title="Gem som billede (PNG)">🖼️ PNG</button>
       <button class="btn-text btn-red" onclick="resetCanvas()" title="Slet alt på grid">🗑️ Slet alt</button>
     </div>
